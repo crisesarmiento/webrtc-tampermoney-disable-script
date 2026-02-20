@@ -684,74 +684,107 @@
     }
 
     const Ctx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new Ctx();
-    const clone = track.clone();
-    const stream = new MediaStream([clone]);
-    const source = ctx.createMediaStreamSource(stream);
-    const splitter = ctx.createChannelSplitter(2);
-
-    const left = ctx.createAnalyser();
-    const right = ctx.createAnalyser();
-    left.fftSize = 2048;
-    right.fftSize = 2048;
-
-    source.connect(splitter);
-    splitter.connect(left, 0);
-    splitter.connect(right, 1);
-
-    const leftData = new Float32Array(left.frequencyBinCount);
-    const rightData = new Float32Array(right.frequencyBinCount);
-
-    let diffEnergy = 0;
-    let totalEnergy = 0;
-    let samples = 0;
-
-    const started = Date.now();
-    while (Date.now() - started < sampleMs) {
-      left.getFloatFrequencyData(leftData);
-      right.getFloatFrequencyData(rightData);
-
-      for (let i = 0; i < leftData.length; i++) {
-        const l = Number.isFinite(leftData[i]) ? leftData[i] : -160;
-        const r = Number.isFinite(rightData[i]) ? rightData[i] : -160;
-        const dl = Math.pow(10, l / 20);
-        const dr = Math.pow(10, r / 20);
-        diffEnergy += Math.abs(dl - dr);
-        totalEnergy += Math.max(dl, dr);
-      }
-
-      samples++;
-      await new Promise((resolve) => setTimeout(resolve, 80));
-    }
-
-    const normalizedDiff = totalEnergy > 0 ? diffEnergy / totalEnergy : 0;
-    const channelCount = settings.channelCount ?? null;
-
-    const result = {
-      channelCount,
-      sampleRate: settings.sampleRate ?? null,
-      normalizedChannelDifference: Number(normalizedDiff.toFixed(6)),
-      samples,
-      warning: null,
-      trackLabel: track.label || null,
-    };
-
-    if (channelCount !== null && channelCount < 2) {
-      result.warning = 'Track is not reporting stereo channelCount.';
-    } else if (normalizedDiff < 0.02) {
-      result.warning = 'Channels look nearly identical (possible dual-mono collapse).';
-    }
-
-    console.log(`${TAG} stereo-probe`, result);
+    let ctx = null;
+    let clone = null;
 
     try {
-      clone.stop();
-      await ctx.close();
-    } catch {
-      // no-op
-    }
+      ctx = new Ctx();
 
-    return result;
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch (err) {
+          warn('mgameStereoProbe: AudioContext resume failed:', err?.message || err);
+        }
+      }
+
+      if (ctx.state !== 'running') {
+        return {
+          channelCount: settings.channelCount ?? null,
+          sampleRate: settings.sampleRate ?? null,
+          normalizedChannelDifference: null,
+          samples: 0,
+          warning: 'AudioContext is suspended; perform a user gesture and retry.',
+          trackLabel: track.label || null,
+        };
+      }
+
+      clone = track.clone();
+      const stream = new MediaStream([clone]);
+      const source = ctx.createMediaStreamSource(stream);
+      const splitter = ctx.createChannelSplitter(2);
+
+      const left = ctx.createAnalyser();
+      const right = ctx.createAnalyser();
+      left.fftSize = 2048;
+      right.fftSize = 2048;
+
+      source.connect(splitter);
+      splitter.connect(left, 0);
+      splitter.connect(right, 1);
+
+      const leftData = new Float32Array(left.frequencyBinCount);
+      const rightData = new Float32Array(right.frequencyBinCount);
+
+      let diffEnergy = 0;
+      let totalEnergy = 0;
+      let samples = 0;
+
+      const started = Date.now();
+      while (Date.now() - started < sampleMs) {
+        left.getFloatFrequencyData(leftData);
+        right.getFloatFrequencyData(rightData);
+
+        for (let i = 0; i < leftData.length; i++) {
+          const l = Number.isFinite(leftData[i]) ? leftData[i] : -160;
+          const r = Number.isFinite(rightData[i]) ? rightData[i] : -160;
+          const dl = Math.pow(10, l / 20);
+          const dr = Math.pow(10, r / 20);
+          diffEnergy += Math.abs(dl - dr);
+          totalEnergy += Math.max(dl, dr);
+        }
+
+        samples++;
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      }
+
+      const normalizedDiff = totalEnergy > 0 ? diffEnergy / totalEnergy : 0;
+      const channelCount = settings.channelCount ?? null;
+
+      const result = {
+        channelCount,
+        sampleRate: settings.sampleRate ?? null,
+        normalizedChannelDifference: Number(normalizedDiff.toFixed(6)),
+        samples,
+        warning: null,
+        trackLabel: track.label || null,
+      };
+
+      if (channelCount !== null && channelCount < 2) {
+        result.warning = 'Track is not reporting stereo channelCount.';
+      } else if (normalizedDiff < 0.02) {
+        result.warning = 'Channels look nearly identical (possible dual-mono collapse).';
+      }
+
+      console.log(`${TAG} stereo-probe`, result);
+      return result;
+    } finally {
+      if (clone) {
+        try {
+          clone.stop();
+        } catch {
+          // no-op
+        }
+      }
+
+      if (ctx) {
+        try {
+          await ctx.close();
+        } catch {
+          // no-op
+        }
+      }
+    }
   };
 
   state.supportedConstraints = safeGetSupportedConstraints();
