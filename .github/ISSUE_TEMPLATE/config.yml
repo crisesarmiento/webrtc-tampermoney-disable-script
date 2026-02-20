@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and live test guide
+    url: https://github.com/crisesarmiento/webrtc-tampermoney-disable-script/blob/master/INSTALL.md
+    about: Follow this guide before opening a bug report.
