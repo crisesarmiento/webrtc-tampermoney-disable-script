@@ -4,14 +4,14 @@
 
 Use the script file:
 
-- `/Users/cristiansarmiento/Projects/GitProjects/webrtc-tampermoney-disable-script/scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
 
 ### Option A: Import via Tampermonkey UI (recommended)
 
 1. Open Tampermonkey dashboard in Atlas browser.
 2. Click `Utilities` -> `Import from file`.
 3. Select:
-   - `/Users/cristiansarmiento/Projects/GitProjects/webrtc-tampermoney-disable-script/scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+   - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
 4. Save and ensure script is **Enabled**.
 
 ### Option B: Paste script manually
@@ -89,12 +89,12 @@ await mgameStats(2000, 20000)
 If you record a new WAV evidence file, run:
 
 ```bash
-bash /Users/cristiansarmiento/Projects/GitProjects/webrtc-tampermoney-disable-script/scripts/tools/analyze_capture_metrics.sh "/absolute/path/to/new-capture.wav"
+bash scripts/tools/analyze_capture_metrics.sh "/absolute/path/to/new-capture.wav"
 ```
 
 Baseline reference file:
 
-- `/Users/cristiansarmiento/Projects/GitProjects/webrtc-tampermoney-disable-script/evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav`
+- `evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav`
 
 Target improvements vs baseline:
 
@@ -109,4 +109,4 @@ If something breaks during live session:
 1. Disable the `v7.0-baseline` script in Tampermonkey.
 2. Reload Atlas tab.
 3. Re-test with previous known script from:
-   - `/Users/cristiansarmiento/Projects/GitProjects/webrtc-tampermoney-disable-script/scripts/legacy/`
+   - `scripts/legacy/`

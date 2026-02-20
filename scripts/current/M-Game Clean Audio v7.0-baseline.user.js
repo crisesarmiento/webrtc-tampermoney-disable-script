@@ -567,17 +567,21 @@
   }
 
   async function runStatsLoop({ intervalMs, durationMs, mode }) {
-    const senders = getActiveAudioSenders();
-    if (!senders.length) {
-      warn(`${mode}: no active outbound audio senders.`);
-      return [];
-    }
-
     const results = [];
     const previous = new Map();
     const endAt = Date.now() + durationMs;
+    let sawAnySender = false;
 
     while (Date.now() < endAt) {
+      // Re-read active senders each cycle so renegotiation/replacement is tracked.
+      const senders = getActiveAudioSenders();
+      if (!senders.length) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        continue;
+      }
+
+      sawAnySender = true;
+
       for (const { pcId, sender } of senders) {
         if (!sender.track || sender.track.readyState === 'ended') continue;
 
@@ -626,6 +630,10 @@
       }
 
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+
+    if (!sawAnySender) {
+      warn(`${mode}: no active outbound audio senders during probe window.`);
     }
 
     return results;

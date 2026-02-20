@@ -11,7 +11,8 @@
 
 ## External large media (not committed)
 
-- `/Volumes/Data/Projects/M_Audio-Configurations/ScreenRecording_02-20-2026 11-58-38_1.MP4`
-- `/Volumes/Data/Projects/M_Audio-Configurations/ScreenRecording_02-20-2026 12-18-00_1.MP4`
+- Place external MP4 recordings in a local folder outside this repo, for example:
+  - `~/Videos/M_Audio-Configurations/ScreenRecording_02-20-2026 11-58-38_1.MP4`
+  - `~/Videos/M_Audio-Configurations/ScreenRecording_02-20-2026 12-18-00_1.MP4`
 
-These MP4 files are intentionally referenced by path only to keep repository size controlled.
+These MP4 files are intentionally not committed to keep repository size controlled.

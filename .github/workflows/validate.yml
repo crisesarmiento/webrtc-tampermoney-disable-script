@@ -44,5 +44,10 @@ jobs:
 
       - name: Audio metrics script smoke test
         run: |
-          bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav" > /tmp/audio-metrics.txt
-          rg -n "input_i|input_tp|silence_start|L-R residual|mean_volume|max_volume" /tmp/audio-metrics.txt || true
+          SAMPLE_WAV="$(find evidence/audio -maxdepth 1 -name '*.wav' | sort | head -n 1)"
+          if [ -z "$SAMPLE_WAV" ]; then
+            echo "No WAV sample found under evidence/audio/"
+            exit 1
+          fi
+          bash "scripts/tools/analyze_capture_metrics.sh" "$SAMPLE_WAV" > /tmp/audio-metrics.txt
+          rg -n "input_i|input_tp|mean_volume|max_volume|L-R residual" /tmp/audio-metrics.txt
