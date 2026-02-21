@@ -363,8 +363,11 @@
     }
 
     if (!params) return Promise.resolve(false);
-    if (!params.encodings) params.encodings = [{}];
-    if (!params.encodings.length) params.encodings.push({});
+    if (!params.encodings || !params.encodings.length) {
+      captureSenderSnapshot(sender, pcId);
+      captureSenderRuntimeSnapshot(sender, pcId, 'setParameters-no-encodings');
+      return Promise.resolve(false);
+    }
 
     const encoding0 = params.encodings[0];
     let changed = false;
