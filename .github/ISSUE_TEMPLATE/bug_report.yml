@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a capture, dropout, stereo, or userscript issue
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+      placeholder: Short bug summary
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, Atlas version, OS, interface, selected mic label
+      placeholder: |
+        Browser:
+        Atlas version:
+        OS:
+        Interface:
+        Atlas input label:
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps to trigger the issue
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste outputs from mgameStatus/mgameInspect/mgameDropoutProbe and capture metrics if available
+      placeholder: Paste relevant command output here
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I verified the script is enabled in Tampermonkey
+          required: true
+        - label: I reloaded the Atlas/X tab after enabling the script
+          required: true
+        - label: I confirmed the selected input label in Atlas
+          required: true

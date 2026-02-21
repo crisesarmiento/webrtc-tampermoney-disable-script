@@ -1,0 +1,53 @@
+name: Validate Repository
+
+on:
+  pull_request:
+    branches: [master, development]
+  push:
+    branches: [master, development]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install CLI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg ripgrep
+
+      - name: Verify required project files
+        run: |
+          test -f "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+          test -f "scripts/tools/analyze_capture_metrics.sh"
+          test -f "INSTALL.md"
+          test -f "README.md"
+
+      - name: JavaScript syntax check (.user.js)
+        run: |
+          find scripts/current scripts/legacy -name "*.user.js" -print0 | while IFS= read -r -d '' file; do
+            echo "Checking syntax: $file"
+            node --check "$file"
+          done
+
+      - name: Shell script syntax check
+        run: |
+          bash -n "scripts/tools/analyze_capture_metrics.sh"
+
+      - name: Audio metrics script smoke test
+        run: |
+          SAMPLE_WAV="$(find evidence/audio -maxdepth 1 -name '*.wav' | sort | head -n 1)"
+          if [ -z "$SAMPLE_WAV" ]; then
+            echo "No WAV sample found under evidence/audio/"
+            exit 1
+          fi
+          bash "scripts/tools/analyze_capture_metrics.sh" "$SAMPLE_WAV" > /tmp/audio-metrics.txt
+          rg -n "input_i|input_tp|mean_volume|max_volume|L-R residual" /tmp/audio-metrics.txt

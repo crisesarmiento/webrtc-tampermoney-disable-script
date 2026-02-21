@@ -1,0 +1,10 @@
+# Normalize text files
+* text=auto
+
+# Treat binary evidence explicitly
+*.wav binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.zip binary

@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a userscript, tooling, or docs enhancement
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Describe the current limitation
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should be added or changed?
+      placeholder: Describe your proposed behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - v7.0 baseline-safe (no new DSP)
+        - v7.1 gated enhancement
+        - Docs/tooling only
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Expected changes in quality, stability, or workflow
+      placeholder: Explain expected outcome and tradeoffs
+    validations:
+      required: false

@@ -1,0 +1,8 @@
+# Default code owner
+* @crisesarmiento
+
+# Focused ownership (optional explicit paths)
+/scripts/current/ @crisesarmiento
+/scripts/tools/ @crisesarmiento
+/docs/ @crisesarmiento
+/evidence/ @crisesarmiento
