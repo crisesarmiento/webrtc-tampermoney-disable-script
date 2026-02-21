@@ -2,6 +2,11 @@
 
 Describe what changed and why.
 
+## Linked Issue
+
+- Issue: #<id>
+- Closing keyword (required): `Closes #<id>`
+
 ## Scope
 
 - [ ] Userscript logic (`scripts/current`)
@@ -21,6 +26,7 @@ bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_
 
 ## Audio Risk Checklist
 
+- [ ] Issue was created before implementation started
 - [ ] No new forced DSP stages added to `v7.0-baseline`
 - [ ] No periodic `setParameters()` spam loops introduced
 - [ ] Stereo integrity behavior considered
