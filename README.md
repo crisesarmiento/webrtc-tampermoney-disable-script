@@ -2,10 +2,11 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository focuses on one priority for `v7.0`: **capture integrity first**.
+This repository currently focuses on one priority for `v8.0`: **music transport integrity first**.
 
-- No unnecessary DSP in baseline
-- Strong diagnostics for dropouts and dual-mono detection
+- Transport-first baseline (Opus music SDP guard + sender hints)
+- Strict stereo gate diagnostics
+- One-command `v5.2` compatibility fallback profile
 - Reproducible audio evidence workflow
 
 ## What Is Included
@@ -42,14 +43,17 @@ For Linear/GitHub/Codex automation setup, use:
 
 ## Runtime Diagnostics
 
-Available console commands in `v7.0-baseline`:
+Available console commands in `v8.0-transport-first`:
 
 - `mgameStatus()`
 - `mgameInspect()`
+- `mgameProfile([name])`
+- `mgameGain([value])`
 - `mgameStats(intervalMs, durationMs)`
 - `mgameDropoutProbe(intervalMs, durationMs)`
 - `mgameCodecProbe(intervalMs, durationMs)`
 - `mgameStereoProbe(sampleMs)`
+- `mgameGateCheck(intervalMs, durationMs)`
 
 These commands help verify:
 
@@ -58,6 +62,8 @@ These commands help verify:
 - Runtime codec/transport continuity
 - Stereo integrity vs dual-mono collapse
 - Dropout windows during live publish
+- Opus guard status (`usedtx=0`, stereo/fullband settings)
+- Strict-mode pass/fail with compat fallback guidance
 
 ## Capture Regression Analysis
 
@@ -85,12 +91,12 @@ From `evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav`:
 - Silence windows detected in a continuous-content segment
 - L-R residual near `-91 dB` (dual-mono symptom)
 
-These findings define the `v7.0` goal: **continuous, properly leveled, stereo-preserving capture path**.
+These findings define the `v8.0` goal: **continuous, stereo-intact, transport-stable music capture**.
 
-## v7 Roadmap
+## v8 Roadmap
 
-- `v7.0` (current): baseline integrity + diagnostics
-- `v7.1` (gated): optional gain-only stage, then opt-in auto-mode prototype
+- `v8.0` (current): transport-first + strict stereo gates + `compat_v52` fallback
+- `v8.1` (gated): incremental hardening only after repeated gate-check passes
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
 
