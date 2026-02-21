@@ -63,16 +63,21 @@
     tracks: new Set(),
     lastRequestedConstraints: null,
     lastRequestedApplyConstraints: null,
-    lastAppliedTrackSettings: null,
-    lastInputLabel: null,
-    lastInputDeviceId: null,
+    captureInputLabel: null,
+    captureInputDeviceId: null,
+    captureTrackSettings: null,
+    senderTrackLabel: null,
+    senderTrackDeviceId: null,
+    senderTrackSettings: null,
     lastSenderParameters: {},
+    lastSenderStats: {},
     lastDropoutProbe: null,
     supportedConstraints: {},
     nextPcId: 1,
     monitorTimers: {
       stats: null,
       dropout: null,
+      codec: null,
     },
   };
 
@@ -114,16 +119,51 @@
     }
   }
 
-  function updateTrackSnapshot(track) {
+  function isSyntheticTrackIdentity(label, deviceId) {
+    const normalizedLabel = String(label || '').toLowerCase();
+    const normalizedDevice = String(deviceId || '').toLowerCase();
+    return (
+      normalizedLabel.includes('mediastreamaudiodestinationnode') ||
+      normalizedDevice.startsWith('webaudio-') ||
+      normalizedDevice.includes('webaudio')
+    );
+  }
+
+  function safeTrackSettings(track) {
+    if (!track || typeof track.getSettings !== 'function') return {};
+    try {
+      return track.getSettings() || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function snapshotCaptureTrack(track) {
     if (!track || track.kind !== 'audio') return;
     try {
-      const settings = track.getSettings ? track.getSettings() : {};
-      state.lastAppliedTrackSettings = cloneJSON(settings) || {};
-      if (track.label) state.lastInputLabel = track.label;
-      if (settings.deviceId) state.lastInputDeviceId = settings.deviceId;
+      const settings = safeTrackSettings(track);
+      state.captureTrackSettings = cloneJSON(settings) || {};
+      if (track.label) state.captureInputLabel = track.label;
+      if (settings.deviceId) state.captureInputDeviceId = settings.deviceId;
     } catch {
       // no-op
     }
+  }
+
+  function snapshotSenderTrack(track) {
+    if (!track || track.kind !== 'audio') return;
+    try {
+      const settings = safeTrackSettings(track);
+      state.senderTrackSettings = cloneJSON(settings) || {};
+      if (track.label) state.senderTrackLabel = track.label;
+      if (settings.deviceId) state.senderTrackDeviceId = settings.deviceId;
+    } catch {
+      // no-op
+    }
+  }
+
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   function normalizeAudioConstraints(audioConstraints) {
@@ -169,7 +209,7 @@
     if (!track || track.kind !== 'audio') return Promise.resolve();
 
     setMusicHint(track);
-    updateTrackSnapshot(track);
+    snapshotCaptureTrack(track);
 
     if (typeof track.applyConstraints !== 'function') {
       return Promise.resolve();
@@ -179,7 +219,7 @@
       .applyConstraints(buildW3CWithOptionalVoiceIsolation())
       .then(() => {
         setMusicHint(track);
-        updateTrackSnapshot(track);
+        snapshotCaptureTrack(track);
       })
       .catch((err) => {
         warn('Track applyConstraints failed:', err?.message || err);
@@ -211,12 +251,87 @@
     }
   }
 
+  async function captureSenderRuntimeSnapshot(sender, pcId, reason = 'runtime') {
+    if (!sender || sender.track?.kind !== 'audio' || typeof sender.getStats !== 'function') return null;
+
+    try {
+      const report = await sender.getStats();
+      let outbound = null;
+      let remoteInbound = null;
+
+      report.forEach((entry) => {
+        const isAudio = entry.kind === 'audio' || entry.mediaType === 'audio';
+
+        if (entry.type === 'outbound-rtp' && isAudio && !entry.isRemote) {
+          if (!outbound || (entry.bytesSent || 0) > (outbound.bytesSent || 0)) {
+            outbound = entry;
+          }
+          return;
+        }
+
+        if (entry.type === 'remote-inbound-rtp' && isAudio) {
+          if (!remoteInbound || (entry.packetsLost || 0) >= (remoteInbound.packetsLost || 0)) {
+            remoteInbound = entry;
+          }
+        }
+      });
+
+      if (!outbound) return null;
+
+      let codec = null;
+      if (outbound.codecId && typeof report.get === 'function') {
+        codec = report.get(outbound.codecId) || null;
+      }
+
+      let transport = null;
+      if (outbound.transportId && typeof report.get === 'function') {
+        transport = report.get(outbound.transportId) || null;
+      }
+
+      let selectedPair = null;
+      if (transport?.selectedCandidatePairId && typeof report.get === 'function') {
+        selectedPair = report.get(transport.selectedCandidatePairId) || null;
+      }
+
+      const key = trackSenderKey(sender, pcId);
+      const snapshot = {
+        reason,
+        timestamp: Date.now(),
+        bytesSent: outbound.bytesSent || 0,
+        packetsSent: outbound.packetsSent || 0,
+        retransmittedPacketsSent: outbound.retransmittedPacketsSent ?? null,
+        nackCount: outbound.nackCount ?? null,
+        roundTripTime: remoteInbound?.roundTripTime ?? null,
+        totalRoundTripTime: remoteInbound?.totalRoundTripTime ?? null,
+        codec: {
+          mimeType: codec?.mimeType || null,
+          clockRate: codec?.clockRate || null,
+          channels: codec?.channels ?? null,
+          payloadType: codec?.payloadType ?? outbound.payloadType ?? null,
+          sdpFmtpLine: codec?.sdpFmtpLine || null,
+        },
+        transport: {
+          transportId: outbound.transportId || null,
+          selectedCandidatePairId: transport?.selectedCandidatePairId || null,
+          currentRoundTripTime: selectedPair?.currentRoundTripTime ?? null,
+          availableOutgoingBitrate: selectedPair?.availableOutgoingBitrate ?? null,
+        },
+      };
+
+      state.lastSenderStats[key] = snapshot;
+      return snapshot;
+    } catch (err) {
+      warn('sender.getStats failed:', err?.message || err);
+      return null;
+    }
+  }
+
   function trySetSenderBitrate(sender, pcId) {
     if (!ENABLE_SENDER_BITRATE_HINT) return Promise.resolve(false);
     if (!sender || sender.track?.kind !== 'audio') return Promise.resolve(false);
 
     setMusicHint(sender.track);
-    updateTrackSnapshot(sender.track);
+    snapshotSenderTrack(sender.track);
 
     let params;
     try {
@@ -230,17 +345,33 @@
     if (!params.encodings.length) params.encodings.push({});
 
     const encoding0 = params.encodings[0];
-    if (encoding0.maxBitrate === TARGET_AUDIO_MAX_BITRATE_BPS) {
-      captureSenderSnapshot(sender, pcId);
-      return Promise.resolve(false);
+    let changed = false;
+
+    if (encoding0.maxBitrate !== TARGET_AUDIO_MAX_BITRATE_BPS) {
+      encoding0.maxBitrate = TARGET_AUDIO_MAX_BITRATE_BPS;
+      changed = true;
     }
 
-    encoding0.maxBitrate = TARGET_AUDIO_MAX_BITRATE_BPS;
+    // Apply channels hint only when browser exposes this field in sender encodings.
+    if (
+      Object.prototype.hasOwnProperty.call(encoding0, 'channels') &&
+      encoding0.channels !== 2
+    ) {
+      encoding0.channels = 2;
+      changed = true;
+    }
+
+    if (!changed) {
+      captureSenderSnapshot(sender, pcId);
+      captureSenderRuntimeSnapshot(sender, pcId, 'setParameters-skip');
+      return Promise.resolve(false);
+    }
 
     return sender
       .setParameters(params)
       .then(() => {
         captureSenderSnapshot(sender, pcId);
+        captureSenderRuntimeSnapshot(sender, pcId, 'setParameters-applied');
         return true;
       })
       .catch((err) => {
@@ -258,9 +389,10 @@
       senders.forEach((sender) => {
         if (sender.track?.kind !== 'audio') return;
         setMusicHint(sender.track);
-        updateTrackSnapshot(sender.track);
+        snapshotSenderTrack(sender.track);
         captureSenderSnapshot(sender, pcId);
         trySetSenderBitrate(sender, pcId);
+        captureSenderRuntimeSnapshot(sender, pcId, `refresh:${reason}`);
       });
       log(`Refreshed audio senders for pc#${pcId} via ${reason}`);
     } catch (err) {
@@ -272,7 +404,7 @@
     if (!track || track.kind !== 'audio') return;
     state.tracks.add(track);
     setMusicHint(track);
-    updateTrackSnapshot(track);
+    snapshotCaptureTrack(track);
     disableProcessingOnTrack(track);
 
     track.addEventListener(
@@ -340,7 +472,11 @@
 
       return originalApplyConstraints.call(this, modified).then((result) => {
         setMusicHint(this);
-        updateTrackSnapshot(this);
+        if (state.tracks.has(this)) {
+          snapshotCaptureTrack(this);
+        } else {
+          snapshotSenderTrack(this);
+        }
         return result;
       });
     };
@@ -399,9 +535,10 @@
           const sender = originalAddTrack(...trackArgs);
           if (sender?.track?.kind === 'audio') {
             setMusicHint(sender.track);
-            updateTrackSnapshot(sender.track);
+            snapshotSenderTrack(sender.track);
             captureSenderSnapshot(sender, id);
             trySetSenderBitrate(sender, id);
+            captureSenderRuntimeSnapshot(sender, id, 'addTrack');
           }
           return sender;
         };
@@ -414,9 +551,10 @@
           const sender = transceiver?.sender;
           if (sender?.track?.kind === 'audio') {
             setMusicHint(sender.track);
-            updateTrackSnapshot(sender.track);
+            snapshotSenderTrack(sender.track);
             captureSenderSnapshot(sender, id);
             trySetSenderBitrate(sender, id);
+            captureSenderRuntimeSnapshot(sender, id, 'addTransceiver');
           }
           return transceiver;
         };
@@ -455,6 +593,38 @@
     return list;
   }
 
+  function getSenderStatsSnapshot(sender, pcId) {
+    if (!sender || sender.track?.kind !== 'audio') return null;
+    const key = trackSenderKey(sender, pcId);
+    return cloneJSON(state.lastSenderStats[key] || null);
+  }
+
+  function buildPcSummary() {
+    const summary = [];
+    for (const pc of state.pcs) {
+      if (!pc || pc.connectionState === 'closed') continue;
+      const meta = pcMeta.get(pc);
+      const pcId = meta?.id || '?';
+      let senderCount = 0;
+      try {
+        const senders = pc.getSenders ? pc.getSenders() : [];
+        senderCount = senders.filter((sender) => sender.track?.kind === 'audio').length;
+      } catch {
+        senderCount = 0;
+      }
+
+      summary.push({
+        pcId,
+        connectionState: pc.connectionState || null,
+        iceConnectionState: pc.iceConnectionState || null,
+        signalingState: pc.signalingState || null,
+        audioSenderCount: senderCount,
+      });
+    }
+
+    return summary;
+  }
+
   window.mgameStatus = function () {
     const supported = safeGetSupportedConstraints();
     state.supportedConstraints = supported;
@@ -471,17 +641,46 @@
       return {
         pcId,
         trackLabel: sender.track?.label || '(none)',
+        trackDeviceId: safeTrackSettings(sender.track).deviceId || null,
         contentHint: sender.track?.contentHint || '(none)',
         encoding0: cloneJSON(params?.encodings?.[0] || null),
+        runtimeStats: getSenderStatsSnapshot(sender, pcId),
       };
     });
+
+    const firstSender = senders[0]?.sender || null;
+    const firstSenderSettings = safeTrackSettings(firstSender?.track);
+    const senderTrackLabel = firstSender?.track?.label || state.senderTrackLabel || '(unknown yet)';
+    const senderTrackDeviceId = firstSenderSettings.deviceId || state.senderTrackDeviceId || '(unknown yet)';
+    const senderTrackSettings = Object.keys(firstSenderSettings).length
+      ? firstSenderSettings
+      : state.senderTrackSettings || {};
+    const syntheticTrackWarning = isSyntheticTrackIdentity(senderTrackLabel, senderTrackDeviceId)
+      ? 'Outbound sender track appears synthetic (WebAudio destination track).'
+      : null;
+
+    const pcSummary = buildPcSummary();
+    const topologyWarning =
+      pcSummary.length > 1 && senderSummary.length === 1
+        ? 'Multiple PeerConnections detected but only one active outbound audio sender.'
+        : null;
 
     const status = {
       version: state.version,
       startedAt: state.startedAt,
-      selectedInputLabel: state.lastInputLabel || '(unknown yet)',
-      selectedInputDeviceId: state.lastInputDeviceId || '(unknown yet)',
-      trackSettings: state.lastAppliedTrackSettings || {},
+      captureInputLabel: state.captureInputLabel || '(unknown yet)',
+      captureInputDeviceId: state.captureInputDeviceId || '(unknown yet)',
+      captureTrackSettings: state.captureTrackSettings || {},
+      senderTrackLabel,
+      senderTrackDeviceId,
+      senderTrackSettings,
+      syntheticTrackWarning,
+      topologyWarning,
+      pcSummary,
+      // Backward-compatible aliases.
+      selectedInputLabel: state.captureInputLabel || '(unknown yet)',
+      selectedInputDeviceId: state.captureInputDeviceId || '(unknown yet)',
+      trackSettings: state.captureTrackSettings || {},
       activePeerConnections: state.pcs.size,
       activeTrackedAudioTracks: state.tracks.size,
       senderCount: senderSummary.length,
@@ -520,6 +719,7 @@
         const senders = pc.getSenders ? pc.getSenders() : [];
         senders.forEach((sender) => {
           if (sender.track?.kind !== 'audio') return;
+          const runtimeStats = getSenderStatsSnapshot(sender, pcId);
           let params = null;
           try {
             params = sender.getParameters ? sender.getParameters() : null;
@@ -533,7 +733,16 @@
             trackLabel: sender.track?.label || null,
             contentHint: sender.track?.contentHint || null,
             maxBitrate: params?.encodings?.[0]?.maxBitrate || null,
+            channelHint: params?.encodings?.[0]?.channels ?? null,
             active: sender.track?.enabled ?? null,
+            codecMimeType: runtimeStats?.codec?.mimeType || null,
+            codecClockRate: runtimeStats?.codec?.clockRate || null,
+            codecChannels: runtimeStats?.codec?.channels ?? null,
+            codecPayloadType: runtimeStats?.codec?.payloadType ?? null,
+            roundTripTime: runtimeStats?.roundTripTime ?? null,
+            bytesSent: runtimeStats?.bytesSent ?? null,
+            packetsSent: runtimeStats?.packetsSent ?? null,
+            runtimeStatsAt: runtimeStats?.timestamp || null,
           });
         });
       } catch {
@@ -576,7 +785,7 @@
       // Re-read active senders each cycle so renegotiation/replacement is tracked.
       const senders = getActiveAudioSenders();
       if (!senders.length) {
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        await sleep(intervalMs);
         continue;
       }
 
@@ -594,6 +803,8 @@
         }
 
         if (!outbound) continue;
+
+        captureSenderRuntimeSnapshot(sender, pcId, mode);
 
         const key = `${pcId}:${sender.track?.id || 'unknown'}`;
         const now = Date.now();
@@ -629,7 +840,7 @@
         console.log(`${TAG} ${mode}`, point);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await sleep(intervalMs);
     }
 
     if (!sawAnySender) {
@@ -664,6 +875,55 @@
     }
 
     return summary;
+  };
+
+  window.mgameCodecProbe = async function (intervalMs = 1200, durationMs = 12000) {
+    const results = [];
+    const endAt = Date.now() + durationMs;
+    let sawAnySender = false;
+
+    while (Date.now() < endAt) {
+      const senders = getActiveAudioSenders();
+      if (!senders.length) {
+        await sleep(intervalMs);
+        continue;
+      }
+
+      sawAnySender = true;
+
+      for (const { pcId, sender } of senders) {
+        if (!sender.track || sender.track.readyState === 'ended') continue;
+
+        const snapshot = await captureSenderRuntimeSnapshot(sender, pcId, 'codec-probe');
+        if (!snapshot) continue;
+
+        const point = {
+          t: snapshot.timestamp,
+          pcId,
+          trackId: sender.track?.id || null,
+          trackLabel: sender.track?.label || null,
+          codecMimeType: snapshot.codec?.mimeType || null,
+          codecClockRate: snapshot.codec?.clockRate || null,
+          codecChannels: snapshot.codec?.channels ?? null,
+          codecPayloadType: snapshot.codec?.payloadType ?? null,
+          roundTripTime: snapshot.roundTripTime ?? null,
+          bytesSent: snapshot.bytesSent ?? null,
+          packetsSent: snapshot.packetsSent ?? null,
+        };
+
+        results.push(point);
+        console.log(`${TAG} codec-probe`, point);
+      }
+
+      await sleep(intervalMs);
+    }
+
+    if (!sawAnySender) {
+      warn('codec-probe: no active outbound audio senders during probe window.');
+    }
+
+    log(`mgameCodecProbe completed with ${results.length} samples.`);
+    return results;
   };
 
   window.mgameStereoProbe = async function (sampleMs = 1200) {
@@ -793,5 +1053,7 @@
   installApplyConstraintsHook();
   installPeerConnectionHook();
 
-  log('Ready. Commands: mgameStatus(), mgameInspect(), mgameStats(ms,duration), mgameStereoProbe(), mgameDropoutProbe()');
+  log(
+    'Ready. Commands: mgameStatus(), mgameInspect(), mgameStats(ms,duration), mgameDropoutProbe(), mgameCodecProbe(ms,duration), mgameStereoProbe()'
+  );
 })();

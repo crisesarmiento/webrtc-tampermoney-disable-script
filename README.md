@@ -42,13 +42,15 @@ Available console commands in `v7.0-baseline`:
 - `mgameStatus()`
 - `mgameInspect()`
 - `mgameStats(intervalMs, durationMs)`
-- `mgameStereoProbe(sampleMs)`
 - `mgameDropoutProbe(intervalMs, durationMs)`
+- `mgameCodecProbe(intervalMs, durationMs)`
+- `mgameStereoProbe(sampleMs)`
 
 These commands help verify:
 
 - Outbound sender stability
 - Runtime bitrate continuity
+- Runtime codec/transport continuity
 - Stereo integrity vs dual-mono collapse
 - Dropout windows during live publish
 

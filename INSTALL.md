@@ -39,7 +39,7 @@ mgameStatus()
 Expected:
 
 - `version: "7.0-baseline"`
-- Non-empty `selectedInputLabel` after capture starts
+- Non-empty `captureInputLabel` after capture starts
 - `senderSummary` entries when publishing
 - W3C constraints shown as supported where available
 
@@ -72,6 +72,12 @@ await mgameStats(2000, 20000)
 ```
 
 - Tracks outbound bitrate continuity across 20s.
+
+```js
+await mgameCodecProbe(1200, 12000)
+```
+
+- Captures outbound codec and transport snapshots over time.
 
 ## 5) Manual listening checklist
 
