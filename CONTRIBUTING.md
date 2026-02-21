@@ -21,6 +21,10 @@ Every discovered defect or enhancement must be tracked before implementation.
 6. Merge PR to `development`; GitHub closes the linked issue.
 7. Promote `development` to `master` via release PR.
 
+Release PR rule:
+- `development -> master` release PRs are exempt from issue-branch checks in `require-linked-issue`.
+- Issue-first enforcement still applies to normal work PRs (issue branches into `development`).
+
 ## Project priorities
 
 For the current line (`v7.0-baseline`):
