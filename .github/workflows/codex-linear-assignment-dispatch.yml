@@ -1,0 +1,82 @@
+name: Codex Linear Assignment Dispatch
+
+on:
+  repository_dispatch:
+    types: [linear_issue_assigned_to_codex]
+  workflow_dispatch:
+    inputs:
+      linear_issue_identifier:
+        description: "Linear issue identifier (example: CE-222)"
+        required: true
+        type: string
+      linear_issue_url:
+        description: "Linear issue URL"
+        required: true
+        type: string
+      github_issue_number:
+        description: "Optional GitHub issue number to notify"
+        required: false
+        type: string
+      title:
+        description: "Optional title when creating a GitHub issue"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Handle assignment dispatch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const isRepositoryDispatch = context.eventName === 'repository_dispatch';
+            const payload = isRepositoryDispatch ? (context.payload.client_payload || {}) : {};
+
+            const linearIdentifier = isRepositoryDispatch
+              ? (payload.linearIssueIdentifier || payload.linear_issue_identifier || 'UNKNOWN')
+              : `${{ inputs.linear_issue_identifier }}`;
+            const linearUrl = isRepositoryDispatch
+              ? (payload.linearIssueUrl || payload.linear_issue_url || '')
+              : `${{ inputs.linear_issue_url }}`;
+            const issueNumberRaw = isRepositoryDispatch
+              ? (payload.githubIssueNumber || payload.github_issue_number || '')
+              : `${{ inputs.github_issue_number }}`;
+            const title = isRepositoryDispatch
+              ? (payload.title || `Codex task trigger: ${linearIdentifier}`)
+              : (`${{ inputs.title }}` || `Codex task trigger: ${linearIdentifier}`);
+
+            const issueNumber = Number(issueNumberRaw);
+            const triggerBody = [
+              'Codex run trigger received from Linear assignment.',
+              '',
+              `- Linear issue: ${linearIdentifier}`,
+              linearUrl ? `- URL: ${linearUrl}` : null,
+              '',
+              'This workflow records the trigger event. Execution can be wired to your Codex runner/agent bridge.',
+            ].filter(Boolean).join('\n');
+
+            if (Number.isInteger(issueNumber) && issueNumber > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: triggerBody,
+              });
+              core.notice(`Posted Codex trigger comment on GitHub issue #${issueNumber}`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: triggerBody,
+              labels: ['enhancement'],
+            });
+
+            core.notice(`Created GitHub issue #${created.data.number} from Linear assignment trigger.`);
