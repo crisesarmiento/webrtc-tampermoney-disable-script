@@ -257,7 +257,9 @@
     try {
       const report = await sender.getStats();
       let outbound = null;
+      let outboundId = null;
       let remoteInbound = null;
+      const remoteInboundCandidates = [];
 
       report.forEach((entry) => {
         const isAudio = entry.kind === 'audio' || entry.mediaType === 'audio';
@@ -265,18 +267,38 @@
         if (entry.type === 'outbound-rtp' && isAudio && !entry.isRemote) {
           if (!outbound || (entry.bytesSent || 0) > (outbound.bytesSent || 0)) {
             outbound = entry;
+            outboundId = entry.id || null;
           }
           return;
         }
 
         if (entry.type === 'remote-inbound-rtp' && isAudio) {
-          if (!remoteInbound || (entry.packetsLost || 0) >= (remoteInbound.packetsLost || 0)) {
-            remoteInbound = entry;
-          }
+          remoteInboundCandidates.push(entry);
         }
       });
 
       if (!outbound) return null;
+
+      // Prefer canonical linkage from the selected outbound stream.
+      if (outbound.remoteId && typeof report.get === 'function') {
+        const linkedByRemoteId = report.get(outbound.remoteId);
+        if (linkedByRemoteId?.type === 'remote-inbound-rtp') {
+          remoteInbound = linkedByRemoteId;
+        }
+      }
+
+      if (!remoteInbound && outboundId) {
+        remoteInbound = remoteInboundCandidates.find((entry) => entry.localId === outboundId) || null;
+      }
+
+      // Last resort fallback for browsers that omit both remoteId/localId linkage.
+      if (!remoteInbound) {
+        remoteInbound =
+          remoteInboundCandidates.reduce((best, entry) => {
+            if (!best) return entry;
+            return (entry.packetsLost || 0) >= (best.packetsLost || 0) ? entry : best;
+          }, null) || null;
+      }
 
       let codec = null;
       if (outbound.codecId && typeof report.get === 'function') {
