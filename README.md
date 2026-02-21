@@ -18,6 +18,7 @@ This repository focuses on one priority for `v7.0`: **capture integrity first**.
   - `scripts/tools/analyze_capture_metrics.sh`
 - Setup, validation, and changelog docs:
   - `docs/`
+  - `docs/setup/linear-github-codex-automation.md`
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
@@ -34,6 +35,10 @@ mgameStatus()
 ```
 
 For full install and live test flow, use `INSTALL.md`.
+
+For Linear/GitHub/Codex automation setup, use:
+
+- `docs/setup/linear-github-codex-automation.md`
 
 ## Runtime Diagnostics
 
