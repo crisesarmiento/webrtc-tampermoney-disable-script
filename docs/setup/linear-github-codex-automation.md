@@ -4,6 +4,7 @@ This setup enables:
 
 1. GitHub issue opened -> Linear issue created automatically.
 2. Linear assignment event -> GitHub repository dispatch endpoint for Codex trigger handling.
+3. Release events tracked in Linear automatically (`development -> master` PRs and `v*` tags).
 
 ## 1) Configure repository secrets and variables
 
@@ -70,7 +71,24 @@ curl -X POST \
   }'
 ```
 
-## 5) Notes
+## 5) Release tracking to Linear
+
+Workflow: `.github/workflows/sync-release-to-linear.yml`
+
+Behavior:
+
+- Trigger A: `pull_request` to `master` when `head == development`
+  - Upserts (create/update) one Linear release ticket.
+  - Keeps the mapping in a PR comment using hidden markers:
+    - `linear-release-ticket-id`
+    - `linear-release-ticket-identifier`
+    - `linear-release-ticket-url`
+  - On each PR sync/edit, updates the same Linear ticket instead of creating duplicates.
+
+- Trigger B: `push` tag matching `v*`
+  - Creates a Linear release tag ticket for the published version tag.
+
+## 6) Notes
 
 - This repository now supports agentic tracking and trigger logging.
 - Actual autonomous code execution still depends on your Codex runner/orchestration layer.
