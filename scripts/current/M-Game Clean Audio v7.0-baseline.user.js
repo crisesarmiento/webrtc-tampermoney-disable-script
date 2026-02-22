@@ -381,21 +381,59 @@
   function optimizeOpusSDP(sdp, context = 'unknown') {
     if (!sdp || typeof sdp !== 'string') return sdp;
 
+    const hadTrailingCrlf = sdp.endsWith('\r\n');
+    const lines = sdp.split('\r\n');
+    const sections = [];
+    let currentSection = [];
+
+    for (const line of lines) {
+      if (line.startsWith('m=') && currentSection.length > 0) {
+        sections.push(currentSection);
+        currentSection = [line];
+      } else {
+        currentSection.push(line);
+      }
+    }
+    if (currentSection.length > 0) sections.push(currentSection);
+
     let replaced = 0;
     let lastAppliedLine = null;
 
-    const nextSdp = sdp.replace(/a=fmtp:(\d+)\s+([^\r\n]+)/g, (fullLine, payloadType, rawParams) => {
-      if (!sdp.includes(`a=rtpmap:${payloadType} opus/`)) return fullLine;
+    const rewrittenSections = sections.map((sectionLines) => {
+      if (!sectionLines.length) return sectionLines;
+      if (!sectionLines[0].startsWith('m=')) return sectionLines;
 
-      const paramMap = parseParamMap(rawParams);
-      delete paramMap.cbr;
-      Object.assign(paramMap, OPUS_MUSIC_PARAMS);
-      const rewritten = serializeParamMap(paramMap);
-      const rewrittenLine = `a=fmtp:${payloadType} ${rewritten}`;
-      replaced += 1;
-      lastAppliedLine = rewrittenLine;
-      return rewrittenLine;
+      const opusPayloadTypes = new Set();
+      sectionLines.forEach((line) => {
+        const match = line.match(/^a=rtpmap:(\d+)\s+opus\/\d+/i);
+        if (match) opusPayloadTypes.add(match[1]);
+      });
+
+      if (!opusPayloadTypes.size) return sectionLines;
+
+      return sectionLines.map((line) => {
+        const match = line.match(/^a=fmtp:(\d+)\s+(.+)$/);
+        if (!match) return line;
+
+        const payloadType = match[1];
+        const rawParams = match[2];
+        if (!opusPayloadTypes.has(payloadType)) return line;
+
+        const paramMap = parseParamMap(rawParams);
+        delete paramMap.cbr;
+        Object.assign(paramMap, OPUS_MUSIC_PARAMS);
+        const rewritten = serializeParamMap(paramMap);
+        const rewrittenLine = `a=fmtp:${payloadType} ${rewritten}`;
+        replaced += 1;
+        lastAppliedLine = rewrittenLine;
+        return rewrittenLine;
+      });
     });
+
+    let nextSdp = rewrittenSections.flat().join('\r\n');
+    if (hadTrailingCrlf && !nextSdp.endsWith('\r\n')) {
+      nextSdp += '\r\n';
+    }
 
     if (replaced > 0) {
       state.lastOpusFmtpApplied = lastAppliedLine;
@@ -861,8 +899,27 @@
           if (optimized !== desc.sdp) {
             desc = { ...desc, sdp: optimized };
           }
+          return originalSetLocalDescription.call(this, desc);
         }
-        return originalSetLocalDescription.call(this, desc);
+
+        return originalSetLocalDescription.call(this, desc).then((result) => {
+          const generated = this.localDescription;
+          if (!generated?.sdp) return result;
+
+          const optimizedGenerated = optimizeOpusSDP(generated.sdp, 'setLocalDescription-auto');
+          if (optimizedGenerated === generated.sdp) return result;
+
+          return originalSetLocalDescription
+            .call(this, { type: generated.type, sdp: optimizedGenerated })
+            .then(() => result)
+            .catch((error) => {
+              warn(
+                'SDP guard auto-rewrite failed after setLocalDescription() no-arg path:',
+                error?.message || error
+              );
+              return result;
+            });
+        });
       };
     }
 
