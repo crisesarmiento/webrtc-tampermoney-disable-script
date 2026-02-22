@@ -459,6 +459,7 @@
         Object.assign(paramMap, OPUS_MUSIC_PARAMS);
         const rewritten = serializeParamMap(paramMap);
         const rewrittenLine = `a=fmtp:${payloadType} ${rewritten}`;
+        if (rewrittenLine === line) return line;
         replaced += 1;
         lastAppliedLine = rewrittenLine;
         return rewrittenLine;
@@ -946,7 +947,12 @@
 
           return originalSetLocalDescription
             .call(this, { type: generated.type, sdp: optimizedGenerated })
-            .then(() => result)
+            .then(() => {
+              log('SDP guard auto-rewrite applied after setLocalDescription() no-arg path.', {
+                type: generated.type || null,
+              });
+              return result;
+            })
             .catch((error) => {
               warn(
                 'SDP guard auto-rewrite failed after setLocalDescription() no-arg path:',
