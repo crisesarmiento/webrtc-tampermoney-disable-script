@@ -49,10 +49,13 @@ Release exemption:
   - Trigger: `issues.opened`
   - Creates Linear issue and comments link back on GitHub issue.
 
-- `.github/workflows/sync-release-to-linear.yml`
-  - Trigger A: `pull_request` to `master` when `head == development`
-  - Trigger B: `push` tags matching `v*`
-  - Upserts/creates Linear release tracking tickets.
+- `.github/workflows/sync-release-pr-to-linear.yml`
+  - Trigger: `pull_request` to `master` when `head == development`
+  - Upserts/creates Linear release tracking ticket for the release PR.
+
+- `.github/workflows/sync-release-tag-to-linear.yml`
+  - Trigger: `push` tags matching `v*`
+  - Creates Linear release tracking ticket for published tag events.
 
 ## 4) Codex review model (OAuth app-based)
 
