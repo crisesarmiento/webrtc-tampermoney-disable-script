@@ -211,8 +211,22 @@
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
 
-    const ctx = new Ctx();
-    state.audioContexts.add(ctx);
+    let ctx = null;
+    for (const candidate of state.audioContexts) {
+      if (!candidate || candidate.state === 'closed') {
+        state.audioContexts.delete(candidate);
+        continue;
+      }
+      if (!ctx || (ctx.state === 'suspended' && candidate.state === 'running')) {
+        ctx = candidate;
+      }
+      if (candidate.state === 'running') break;
+    }
+
+    if (!ctx) {
+      ctx = new Ctx();
+      state.audioContexts.add(ctx);
+    }
 
     if (!state.audioContextResumeHandlersInstalled) {
       const resume = () => {
@@ -264,15 +278,28 @@
       const processedTrack = destination.stream.getAudioTracks()[0];
       if (!processedTrack) return stream;
 
-      state.activeGainNodes.add(gain);
       setMusicHint(processedTrack);
 
+      let removedOriginal = false;
       try {
         stream.removeTrack(originalTrack);
-      } catch {
-        // no-op
+        removedOriginal = true;
+      } catch (error) {
+        warn('compat_v52: failed to attach gain stage:', error?.message || error);
       }
+
+      if (!removedOriginal) {
+        try {
+          source.disconnect();
+          gain.disconnect();
+        } catch {
+          // no-op
+        }
+        return stream;
+      }
+
       stream.addTrack(processedTrack);
+      state.activeGainNodes.add(gain);
 
       processedTrack.addEventListener(
         'ended',
@@ -337,6 +364,14 @@
         await sender.replaceTrack(processedTrack);
         state.activeGainNodes.add(gain);
         state.compatPatchedSenders.add(sender);
+        processedTrack.addEventListener(
+          'ended',
+          () => {
+            state.activeGainNodes.delete(gain);
+            state.compatPatchedSenders.delete(sender);
+          },
+          { once: true }
+        );
         snapshotSenderTrack(processedTrack);
         captureSenderSnapshot(sender, pcId);
         registerTrack(processedTrack);
@@ -1575,19 +1610,23 @@
         await new Promise((resolve) => setTimeout(resolve, 80));
       }
 
-      const normalizedDiff = totalEnergy > 0 ? diffEnergy / totalEnergy : 0;
+      const hasMeasurableEnergy = totalEnergy > 0;
+      const normalizedDiff = hasMeasurableEnergy ? diffEnergy / totalEnergy : null;
       const channelCount = settings.channelCount ?? null;
 
       const result = {
         channelCount,
         sampleRate: settings.sampleRate ?? null,
-        normalizedChannelDifference: Number(normalizedDiff.toFixed(6)),
+        normalizedChannelDifference:
+          normalizedDiff === null ? null : Number(normalizedDiff.toFixed(6)),
         samples,
         warning: null,
         trackLabel: track.label || null,
       };
 
-      if (channelCount !== null && channelCount < 2) {
+      if (!hasMeasurableEnergy) {
+        result.warning = 'No audio energy detected during probe; stereo check inconclusive.';
+      } else if (channelCount !== null && channelCount < 2) {
         result.warning = 'Track is not reporting stereo channelCount.';
       } else if (normalizedDiff < STEREO_DIFF_THRESHOLD) {
         result.warning = 'Channels look nearly identical (possible dual-mono collapse).';

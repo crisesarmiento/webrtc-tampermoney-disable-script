@@ -9,7 +9,7 @@
   - Silence windows detected between about `14.61s` and `19.67s`
   - L-R residual around `-91 dB` (dual-mono symptom)
 - Additional reference capture (Feb 21, 2026):
-  - Source: `/Users/cristiansarmiento/Downloads/ScreenRecording_02-21-2026 18-58-44_1.MP4`
+  - Source: `evidence/raw/ScreenRecording_02-21-2026_18-58-44_1.MP4`
   - Extracted WAV metrics:
     - `max_volume` around `-11.0 dBFS` (not hard-clipped)
     - L-R residual around `-91 dB` (dual-mono collapse symptom)
