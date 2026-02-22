@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         M-Game Clean Audio v7.0 Baseline (Atlas + X Spaces)
+// @name         M-Game Clean Audio v8.0 Transport-First (Atlas + X Spaces)
 // @namespace    http://tampermonkey.net/
-// @version      7.0
-// @description  Baseline capture integrity script: disable WebRTC processing, preserve stereo intent, stabilize sender hints, and expose diagnostics
+// @version      8.0
+// @description  Transport-first music stability: enforce Opus music params, strict stereo gates, and v5.2 compatibility profile
 // @author       Cris Sarmiento
 // @match        https://x.com/*
 // @match        https://twitter.com/*
@@ -14,10 +14,11 @@
 (function () {
   'use strict';
 
-  const VERSION = '7.0-baseline';
-  const TAG = '[M-Game v7.0]';
+  const VERSION = '8.0-transport-first';
+  const TAG = '[M-Game v8.0]';
   const log = (...args) => console.log(TAG, ...args);
   const warn = (...args) => console.warn(TAG, ...args);
+  const errlog = (...args) => console.error(TAG, ...args);
 
   if (window.__mgame && window.__mgame.installed) {
     log('Already installed; skipping duplicate injection.');
@@ -26,6 +27,24 @@
 
   const ENABLE_SENDER_BITRATE_HINT = true;
   const TARGET_AUDIO_MAX_BITRATE_BPS = 128000;
+  const STEREO_DIFF_THRESHOLD = 0.02;
+
+  const PROFILES = {
+    STRICT: 'strict',
+    COMPAT_V52: 'compat_v52',
+  };
+
+  const OPUS_MUSIC_PARAMS = {
+    maxplaybackrate: '48000',
+    'sprop-maxcapturerate': '48000',
+    maxaveragebitrate: String(TARGET_AUDIO_MAX_BITRATE_BPS),
+    stereo: '1',
+    'sprop-stereo': '1',
+    usedtx: '0',
+    useinbandfec: '1',
+  };
+
+  const REQUIRED_OPUS_PARAM_KEYS = Object.keys(OPUS_MUSIC_PARAMS);
 
   const W3C_AUDIO = {
     echoCancellation: false,
@@ -58,6 +77,9 @@
   const state = {
     installed: true,
     version: VERSION,
+    profile: PROFILES.STRICT,
+    availableProfiles: Object.values(PROFILES),
+    currentGain: 1.0,
     startedAt: new Date().toISOString(),
     pcs: new Set(),
     tracks: new Set(),
@@ -72,8 +94,19 @@
     lastSenderParameters: {},
     lastSenderStats: {},
     lastDropoutProbe: null,
+    lastStereoProbe: null,
+    stereoGateState: 'unknown',
+    stereoGateReason: null,
+    lastGateCheck: null,
+    lastOpusFmtpApplied: null,
+    lastOpusGuardContext: null,
+    sdpGuardAppliedCount: 0,
     supportedConstraints: {},
     nextPcId: 1,
+    audioContexts: new Set(),
+    activeGainNodes: new Set(),
+    compatPatchedSenders: new WeakSet(),
+    audioContextResumeHandlersInstalled: false,
     monitorTimers: {
       stats: null,
       dropout: null,
@@ -164,6 +197,337 @@
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function clampGain(value) {
+    return Math.max(0.0, Math.min(3.0, value));
+  }
+
+  function isCompatProfile() {
+    return state.profile === PROFILES.COMPAT_V52;
+  }
+
+  function ensureAudioContext() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+
+    const ctx = new Ctx();
+    state.audioContexts.add(ctx);
+
+    if (!state.audioContextResumeHandlersInstalled) {
+      const resume = () => {
+        state.audioContexts.forEach((candidate) => {
+          if (candidate.state === 'suspended') {
+            candidate.resume().catch(() => {
+              // no-op
+            });
+          }
+        });
+      };
+
+      window.addEventListener('pointerdown', resume, true);
+      window.addEventListener('keydown', resume, true);
+      state.audioContextResumeHandlersInstalled = true;
+    }
+
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {
+        // no-op
+      });
+    }
+
+    return ctx;
+  }
+
+  function maybeAttachCompatGainStage(stream) {
+    if (!isCompatProfile()) return stream;
+    if (!stream || typeof stream.getAudioTracks !== 'function') return stream;
+
+    const originalTrack = stream.getAudioTracks()[0];
+    if (!originalTrack) return stream;
+
+    const ctx = ensureAudioContext();
+    if (!ctx) {
+      warn('compat_v52: AudioContext unavailable, gain stage skipped.');
+      return stream;
+    }
+
+    try {
+      const source = ctx.createMediaStreamSource(stream);
+      const gain = ctx.createGain();
+      gain.gain.value = state.currentGain;
+
+      const destination = ctx.createMediaStreamDestination();
+      source.connect(gain);
+      gain.connect(destination);
+
+      const processedTrack = destination.stream.getAudioTracks()[0];
+      if (!processedTrack) return stream;
+
+      state.activeGainNodes.add(gain);
+      setMusicHint(processedTrack);
+
+      try {
+        stream.removeTrack(originalTrack);
+      } catch {
+        // no-op
+      }
+      stream.addTrack(processedTrack);
+
+      processedTrack.addEventListener(
+        'ended',
+        () => {
+          state.activeGainNodes.delete(gain);
+        },
+        { once: true }
+      );
+
+      log(`compat_v52: gain stage active (${state.currentGain.toFixed(2)}x).`);
+    } catch (error) {
+      warn('compat_v52: failed to attach gain stage:', error?.message || error);
+    }
+
+    return stream;
+  }
+
+  async function activateCompatFallbackOnActiveSenders() {
+    if (!isCompatProfile()) {
+      return { attempted: 0, patched: 0, errors: 0 };
+    }
+
+    const active = getActiveAudioSenders();
+    if (!active.length) {
+      return { attempted: 0, patched: 0, errors: 0 };
+    }
+
+    const ctx = ensureAudioContext();
+    if (!ctx) {
+      return { attempted: active.length, patched: 0, errors: active.length };
+    }
+
+    let attempted = 0;
+    let patched = 0;
+    let errors = 0;
+
+    for (const { pcId, sender } of active) {
+      if (!sender?.track || sender.track.kind !== 'audio') continue;
+      if (state.compatPatchedSenders.has(sender)) continue;
+      if (typeof sender.replaceTrack !== 'function') continue;
+
+      attempted += 1;
+
+      try {
+        const sourceTrack = sender.track;
+        const sourceStream = new MediaStream([sourceTrack]);
+        const source = ctx.createMediaStreamSource(sourceStream);
+        const gain = ctx.createGain();
+        gain.gain.value = state.currentGain;
+        const destination = ctx.createMediaStreamDestination();
+
+        source.connect(gain);
+        gain.connect(destination);
+
+        const processedTrack = destination.stream.getAudioTracks()[0];
+        if (!processedTrack) {
+          errors += 1;
+          continue;
+        }
+
+        setMusicHint(processedTrack);
+        await sender.replaceTrack(processedTrack);
+        state.activeGainNodes.add(gain);
+        state.compatPatchedSenders.add(sender);
+        snapshotSenderTrack(processedTrack);
+        captureSenderSnapshot(sender, pcId);
+        registerTrack(processedTrack);
+        patched += 1;
+      } catch (error) {
+        errors += 1;
+        warn('compat_v52: failed live sender fallback:', error?.message || error);
+      }
+    }
+
+    return { attempted, patched, errors };
+  }
+
+  function parseParamMap(paramString) {
+    const map = {};
+    String(paramString || '')
+      .split(';')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const [key, ...rest] = entry.split('=');
+        if (!key) return;
+        map[key.trim()] = rest.length ? rest.join('=').trim() : '';
+      });
+    return map;
+  }
+
+  function parseOpusFmtpLine(line) {
+    if (!line) return {};
+    const normalized = String(line).trim();
+    const fmtpMatch = normalized.match(/^a=fmtp:\d+\s+(.+)$/);
+    if (fmtpMatch) return parseParamMap(fmtpMatch[1]);
+    return parseParamMap(normalized);
+  }
+
+  function serializeParamMap(paramMap) {
+    return Object.entries(paramMap)
+      .map(([key, value]) => (value !== '' ? `${key}=${value}` : key))
+      .join(';');
+  }
+
+  function optimizeOpusSDP(sdp, context = 'unknown') {
+    if (!sdp || typeof sdp !== 'string') return sdp;
+
+    const hadTrailingCrlf = sdp.endsWith('\r\n');
+    const lines = sdp.split('\r\n');
+    const sections = [];
+    let currentSection = [];
+
+    for (const line of lines) {
+      if (line.startsWith('m=') && currentSection.length > 0) {
+        sections.push(currentSection);
+        currentSection = [line];
+      } else {
+        currentSection.push(line);
+      }
+    }
+    if (currentSection.length > 0) sections.push(currentSection);
+
+    let replaced = 0;
+    let lastAppliedLine = null;
+
+    const rewrittenSections = sections.map((sectionLines) => {
+      if (!sectionLines.length) return sectionLines;
+      if (!sectionLines[0].startsWith('m=')) return sectionLines;
+
+      const opusPayloadTypes = new Set();
+      sectionLines.forEach((line) => {
+        const match = line.match(/^a=rtpmap:(\d+)\s+opus\/\d+/i);
+        if (match) opusPayloadTypes.add(match[1]);
+      });
+
+      if (!opusPayloadTypes.size) return sectionLines;
+
+      return sectionLines.map((line) => {
+        const match = line.match(/^a=fmtp:(\d+)\s+(.+)$/);
+        if (!match) return line;
+
+        const payloadType = match[1];
+        const rawParams = match[2];
+        if (!opusPayloadTypes.has(payloadType)) return line;
+
+        const paramMap = parseParamMap(rawParams);
+        delete paramMap.cbr;
+        Object.assign(paramMap, OPUS_MUSIC_PARAMS);
+        const rewritten = serializeParamMap(paramMap);
+        const rewrittenLine = `a=fmtp:${payloadType} ${rewritten}`;
+        replaced += 1;
+        lastAppliedLine = rewrittenLine;
+        return rewrittenLine;
+      });
+    });
+
+    let nextSdp = rewrittenSections.flat().join('\r\n');
+    if (hadTrailingCrlf && !nextSdp.endsWith('\r\n')) {
+      nextSdp += '\r\n';
+    }
+
+    if (replaced > 0) {
+      state.lastOpusFmtpApplied = lastAppliedLine;
+      state.lastOpusGuardContext = context;
+      state.sdpGuardAppliedCount += replaced;
+    }
+
+    return nextSdp;
+  }
+
+  function evaluateOpusGuardState() {
+    const line = state.lastOpusFmtpApplied;
+    if (!line) {
+      return {
+        pass: false,
+        reason: 'No Opus fmtp line has been observed by the SDP guard yet.',
+        parsed: {},
+      };
+    }
+
+    const parsed = parseOpusFmtpLine(line);
+    for (const key of REQUIRED_OPUS_PARAM_KEYS) {
+      if (String(parsed[key] || '') !== String(OPUS_MUSIC_PARAMS[key])) {
+        return {
+          pass: false,
+          reason: `Opus fmtp missing expected ${key}=${OPUS_MUSIC_PARAMS[key]}.`,
+          parsed,
+        };
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(parsed, 'cbr')) {
+      return {
+        pass: false,
+        reason: 'Opus fmtp still includes cbr parameter.',
+        parsed,
+      };
+    }
+
+    return {
+      pass: true,
+      reason: null,
+      parsed,
+    };
+  }
+
+  function setStereoGate(stateName, reason, probe = null) {
+    state.stereoGateState = stateName;
+    state.stereoGateReason = reason || null;
+    if (probe) state.lastStereoProbe = cloneJSON(probe) || probe;
+  }
+
+  function evaluateStereoGate(probe) {
+    if (!probe) {
+      setStereoGate('fail_no_probe', 'Stereo probe unavailable.', null);
+      return { pass: false, state: state.stereoGateState, reason: state.stereoGateReason };
+    }
+
+    if (probe.channelCount !== null && probe.channelCount < 2) {
+      setStereoGate(
+        'fail_mono_track',
+        `Track reports channelCount=${probe.channelCount}; expected stereo.`,
+        probe
+      );
+    } else if (
+      typeof probe.normalizedChannelDifference === 'number' &&
+      probe.normalizedChannelDifference < STEREO_DIFF_THRESHOLD
+    ) {
+      setStereoGate(
+        'fail_dual_mono',
+        `Channel difference ${probe.normalizedChannelDifference} is below threshold ${STEREO_DIFF_THRESHOLD}.`,
+        probe
+      );
+    } else if (probe.warning) {
+      setStereoGate('unknown', probe.warning, probe);
+    } else {
+      setStereoGate('pass', null, probe);
+    }
+
+    const pass = state.stereoGateState === 'pass';
+
+    if (!pass && state.profile === PROFILES.STRICT) {
+      errlog('Strict stereo gate failed.', {
+        state: state.stereoGateState,
+        reason: state.stereoGateReason,
+        action: "Switch profile with mgameProfile('compat_v52') for immediate fallback.",
+      });
+    }
+
+    return {
+      pass,
+      state: state.stereoGateState,
+      reason: state.stereoGateReason,
+    };
   }
 
   function normalizeAudioConstraints(audioConstraints) {
@@ -445,6 +809,7 @@
     if (!stream) return stream;
 
     try {
+      stream = maybeAttachCompatGainStage(stream);
       stream.getAudioTracks().forEach(registerTrack);
 
       stream.addEventListener('addtrack', (event) => {
@@ -522,12 +887,84 @@
     });
   }
 
+  function installSdpGuardHooks(OriginalPC) {
+    if (!OriginalPC?.prototype) return;
+    if (OriginalPC.prototype.__mgameSdpGuardInstalled) return;
+
+    if (typeof OriginalPC.prototype.setLocalDescription === 'function') {
+      const originalSetLocalDescription = OriginalPC.prototype.setLocalDescription;
+      OriginalPC.prototype.setLocalDescription = function (desc) {
+        if (desc?.sdp) {
+          const optimized = optimizeOpusSDP(desc.sdp, 'setLocalDescription');
+          if (optimized !== desc.sdp) {
+            desc = { ...desc, sdp: optimized };
+          }
+          return originalSetLocalDescription.call(this, desc);
+        }
+
+        return originalSetLocalDescription.call(this, desc).then((result) => {
+          const generated = this.localDescription;
+          if (!generated?.sdp) return result;
+
+          const optimizedGenerated = optimizeOpusSDP(generated.sdp, 'setLocalDescription-auto');
+          if (optimizedGenerated === generated.sdp) return result;
+
+          return originalSetLocalDescription
+            .call(this, { type: generated.type, sdp: optimizedGenerated })
+            .then(() => result)
+            .catch((error) => {
+              warn(
+                'SDP guard auto-rewrite failed after setLocalDescription() no-arg path:',
+                error?.message || error
+              );
+              return result;
+            });
+        });
+      };
+    }
+
+    if (typeof OriginalPC.prototype.createOffer === 'function') {
+      const originalCreateOffer = OriginalPC.prototype.createOffer;
+      OriginalPC.prototype.createOffer = function (...args) {
+        return originalCreateOffer.call(this, ...args).then((offer) => {
+          if (offer?.sdp) {
+            const optimized = optimizeOpusSDP(offer.sdp, 'createOffer');
+            if (optimized !== offer.sdp) {
+              offer.sdp = optimized;
+            }
+          }
+          return offer;
+        });
+      };
+    }
+
+    if (typeof OriginalPC.prototype.createAnswer === 'function') {
+      const originalCreateAnswer = OriginalPC.prototype.createAnswer;
+      OriginalPC.prototype.createAnswer = function (...args) {
+        return originalCreateAnswer.call(this, ...args).then((answer) => {
+          if (answer?.sdp) {
+            const optimized = optimizeOpusSDP(answer.sdp, 'createAnswer');
+            if (optimized !== answer.sdp) {
+              answer.sdp = optimized;
+            }
+          }
+          return answer;
+        });
+      };
+    }
+
+    OriginalPC.prototype.__mgameSdpGuardInstalled = true;
+    log('SDP guard hooks installed (createOffer/createAnswer/setLocalDescription).');
+  }
+
   function installPeerConnectionHook() {
     const OriginalPC = window.RTCPeerConnection;
     if (!OriginalPC) {
       warn('RTCPeerConnection unavailable.');
       return;
     }
+
+    installSdpGuardHooks(OriginalPC);
 
     function WrappedPC(...args) {
       const pc = new OriginalPC(...args);
@@ -650,9 +1087,90 @@
     return summary;
   }
 
+  window.mgameProfile = function (nextProfile) {
+    if (typeof nextProfile === 'undefined') {
+      log('Current profile:', state.profile);
+      return state.profile;
+    }
+
+    if (!state.availableProfiles.includes(nextProfile)) {
+      warn(`Unknown profile "${nextProfile}". Available: ${state.availableProfiles.join(', ')}`);
+      return state.profile;
+    }
+
+    if (nextProfile === state.profile) {
+      log('Profile already active:', state.profile);
+      return state.profile;
+    }
+
+    state.profile = nextProfile;
+    state.stereoGateState = 'unknown';
+    state.stereoGateReason = null;
+
+    if (state.profile === PROFILES.COMPAT_V52) {
+      activateCompatFallbackOnActiveSenders()
+        .then((summary) => {
+          if (summary.patched > 0) {
+            log(`compat_v52 live fallback patched ${summary.patched}/${summary.attempted} active sender(s).`);
+          } else if (summary.attempted > 0) {
+            warn(
+              `compat_v52 live fallback could not patch active senders (${summary.errors}/${summary.attempted} errors). Rejoin/publish may be required.`
+            );
+          }
+        })
+        .catch((error) => {
+          warn('compat_v52 live fallback failed:', error?.message || error);
+        });
+    }
+
+    log(
+      `Profile switched to "${state.profile}".`,
+      state.profile === PROFILES.COMPAT_V52
+        ? "compat_v52 enables gain-stage fallback (new captures + best-effort live replaceTrack)."
+        : 'strict keeps pure transport-first path on new captures. Existing compat live patches remain until track restart.'
+    );
+    return state.profile;
+  };
+
+  window.mgameGain = function (value) {
+    if (typeof value === 'undefined') {
+      log('Current gain:', state.currentGain);
+      return state.currentGain;
+    }
+
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      warn('mgameGain requires a finite number.');
+      return state.currentGain;
+    }
+
+    state.currentGain = clampGain(numeric);
+    state.activeGainNodes.forEach((gainNode) => {
+      try {
+        gainNode.gain.value = state.currentGain;
+      } catch {
+        // no-op
+      }
+    });
+
+    if (state.activeGainNodes.size === 0) {
+      log(
+        `Gain set to ${state.currentGain.toFixed(2)}x.`,
+        isCompatProfile()
+          ? 'Will apply when a compat_v52 stream is active.'
+          : "Strict profile active. Switch with mgameProfile('compat_v52') for live gain stage."
+      );
+    } else {
+      log(`Gain applied to ${state.activeGainNodes.size} active node(s): ${state.currentGain.toFixed(2)}x`);
+    }
+
+    return state.currentGain;
+  };
+
   window.mgameStatus = function () {
     const supported = safeGetSupportedConstraints();
     state.supportedConstraints = supported;
+    const opusGuard = evaluateOpusGuardState();
 
     const senders = getActiveAudioSenders();
     const senderSummary = senders.map(({ pcId, sender }) => {
@@ -692,6 +1210,10 @@
 
     const status = {
       version: state.version,
+      profile: state.profile,
+      availableProfiles: state.availableProfiles,
+      currentGain: state.currentGain,
+      activeGainNodeCount: state.activeGainNodes.size,
       startedAt: state.startedAt,
       captureInputLabel: state.captureInputLabel || '(unknown yet)',
       captureInputDeviceId: state.captureInputDeviceId || '(unknown yet)',
@@ -710,6 +1232,14 @@
       activeTrackedAudioTracks: state.tracks.size,
       senderCount: senderSummary.length,
       senderSummary,
+      stereoGateState: state.stereoGateState,
+      stereoGateReason: state.stereoGateReason,
+      lastStereoProbe: state.lastStereoProbe,
+      lastGateCheck: state.lastGateCheck,
+      lastOpusFmtpApplied: state.lastOpusFmtpApplied,
+      lastOpusGuardContext: state.lastOpusGuardContext,
+      sdpGuardAppliedCount: state.sdpGuardAppliedCount,
+      opusGuard,
       lastRequestedConstraints: state.lastRequestedConstraints,
       lastRequestedApplyConstraints: state.lastRequestedApplyConstraints,
       supportedConstraints: {
@@ -745,6 +1275,8 @@
         senders.forEach((sender) => {
           if (sender.track?.kind !== 'audio') return;
           const runtimeStats = getSenderStatsSnapshot(sender, pcId);
+          const fmtpLine = runtimeStats?.codec?.sdpFmtpLine || state.lastOpusFmtpApplied || null;
+          const fmtp = parseOpusFmtpLine(fmtpLine);
           let params = null;
           try {
             params = sender.getParameters ? sender.getParameters() : null;
@@ -764,6 +1296,11 @@
             codecClockRate: runtimeStats?.codec?.clockRate || null,
             codecChannels: runtimeStats?.codec?.channels ?? null,
             codecPayloadType: runtimeStats?.codec?.payloadType ?? null,
+            codecSdpFmtpLine: fmtpLine,
+            opusUsedtx: fmtp.usedtx ?? null,
+            opusStereo: fmtp.stereo ?? null,
+            opusSpropStereo: fmtp['sprop-stereo'] ?? null,
+            opusMaxAverageBitrate: fmtp.maxaveragebitrate ?? null,
             roundTripTime: runtimeStats?.roundTripTime ?? null,
             bytesSent: runtimeStats?.bytesSent ?? null,
             packetsSent: runtimeStats?.packetsSent ?? null,
@@ -957,6 +1494,7 @@
 
     if (!target || !target.sender.track) {
       warn('mgameStereoProbe: no active outbound audio track to inspect.');
+      setStereoGate('fail_no_sender', 'No active outbound audio sender.', null);
       return null;
     }
 
@@ -965,7 +1503,9 @@
 
     if (!window.AudioContext && !window.webkitAudioContext) {
       warn('mgameStereoProbe: AudioContext unavailable.');
-      return { warning: 'AudioContext unavailable', settings };
+      const unavailable = { warning: 'AudioContext unavailable', settings };
+      evaluateStereoGate(unavailable);
+      return unavailable;
     }
 
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -984,7 +1524,7 @@
       }
 
       if (ctx.state !== 'running') {
-        return {
+        const suspended = {
           channelCount: settings.channelCount ?? null,
           sampleRate: settings.sampleRate ?? null,
           normalizedChannelDifference: null,
@@ -992,6 +1532,8 @@
           warning: 'AudioContext is suspended; perform a user gesture and retry.',
           trackLabel: track.label || null,
         };
+        evaluateStereoGate(suspended);
+        return suspended;
       }
 
       clone = track.clone();
@@ -1047,9 +1589,13 @@
 
       if (channelCount !== null && channelCount < 2) {
         result.warning = 'Track is not reporting stereo channelCount.';
-      } else if (normalizedDiff < 0.02) {
+      } else if (normalizedDiff < STEREO_DIFF_THRESHOLD) {
         result.warning = 'Channels look nearly identical (possible dual-mono collapse).';
       }
+
+      const gate = evaluateStereoGate(result);
+      result.stereoGateState = gate.state;
+      result.stereoGateReason = gate.reason;
 
       console.log(`${TAG} stereo-probe`, result);
       return result;
@@ -1072,6 +1618,68 @@
     }
   };
 
+  window.mgameGateCheck = async function (intervalMs = 500, durationMs = 12000) {
+    const startedAt = new Date().toISOString();
+    const failures = [];
+
+    const dropout = await window.mgameDropoutProbe(intervalMs, durationMs);
+    if (!dropout || dropout.samples === 0 || dropout.dropouts > 0) {
+      failures.push(
+        `Dropout probe failed (${dropout?.dropouts ?? 'n/a'} stalled windows over ${dropout?.samples ?? 0} samples).`
+      );
+    }
+
+    const stereo = await window.mgameStereoProbe(1500);
+    if (state.stereoGateState !== 'pass') {
+      failures.push(
+        `Stereo gate failed (${state.stereoGateState}${state.stereoGateReason ? `: ${state.stereoGateReason}` : ''}).`
+      );
+    }
+
+    const codec = await window.mgameCodecProbe(Math.max(1000, intervalMs * 2), Math.min(durationMs, 12000));
+    if (!codec.length) {
+      failures.push('Codec probe collected no outbound audio samples.');
+    }
+
+    const opusGuard = evaluateOpusGuardState();
+    if (!opusGuard.pass) {
+      failures.push(`Opus SDP guard failed: ${opusGuard.reason}`);
+    }
+
+    const result = {
+      pass: failures.length === 0,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      profile: state.profile,
+      dropoutProbe: dropout,
+      stereoProbe: stereo,
+      stereoGateState: state.stereoGateState,
+      stereoGateReason: state.stereoGateReason,
+      codecSamples: codec.length,
+      sdpGuard: {
+        pass: opusGuard.pass,
+        reason: opusGuard.reason,
+        parsed: opusGuard.parsed,
+        lastOpusFmtpApplied: state.lastOpusFmtpApplied,
+        sdpGuardAppliedCount: state.sdpGuardAppliedCount,
+      },
+      failures,
+    };
+
+    state.lastGateCheck = cloneJSON(result) || result;
+
+    if (!result.pass) {
+      warn('mgameGateCheck failed.', result);
+      if (state.profile === PROFILES.STRICT) {
+        warn("Recommended fallback: mgameProfile('compat_v52')");
+      }
+    } else {
+      log('mgameGateCheck passed.', result);
+    }
+
+    return result;
+  };
+
   state.supportedConstraints = safeGetSupportedConstraints();
 
   installGetUserMediaHook();
@@ -1079,6 +1687,6 @@
   installPeerConnectionHook();
 
   log(
-    'Ready. Commands: mgameStatus(), mgameInspect(), mgameStats(ms,duration), mgameDropoutProbe(), mgameCodecProbe(ms,duration), mgameStereoProbe()'
+    "Ready. Commands: mgameStatus(), mgameInspect(), mgameProfile([name]), mgameGain([value]), mgameStats(ms,duration), mgameDropoutProbe(), mgameCodecProbe(ms,duration), mgameStereoProbe(), mgameGateCheck()"
   );
 })();

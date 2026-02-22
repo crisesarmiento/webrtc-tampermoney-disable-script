@@ -1,6 +1,6 @@
 # Install and Live Test (Atlas + X Spaces)
 
-## 1) Install the v7.0 script in Tampermonkey
+## 1) Install the v8.0 script in Tampermonkey
 
 Use the script file:
 
@@ -38,10 +38,11 @@ mgameStatus()
 
 Expected:
 
-- `version: "7.0-baseline"`
+- `version: "8.0-transport-first"`
 - Non-empty `captureInputLabel` after capture starts
 - `senderSummary` entries when publishing
 - W3C constraints shown as supported where available
+- `profile: "strict"` by default
 
 ## 4) Live diagnostics sequence (Atlas)
 
@@ -79,6 +80,24 @@ await mgameCodecProbe(1200, 12000)
 
 - Captures outbound codec and transport snapshots over time.
 
+```js
+await mgameGateCheck(500, 12000)
+```
+
+- Runs full gate checks (dropout + stereo + codec + Opus SDP guard).
+- If this fails in strict mode, fallback quickly:
+
+```js
+mgameProfile('compat_v52')
+await mgameGateCheck(500, 12000)
+```
+
+- Optional live gain in compat mode:
+
+```js
+mgameGain(1.2)
+```
+
 ## 5) Manual listening checklist
 
 1. Continuous music-only source for at least 30s.
@@ -112,7 +131,8 @@ Target improvements vs baseline:
 
 If something breaks during live session:
 
-1. Disable the `v7.0-baseline` script in Tampermonkey.
+1. First try `mgameProfile('compat_v52')` (no reload required).
+2. If still broken, disable the script in Tampermonkey.
 2. Reload Atlas tab.
 3. Re-test with previous known script from:
    - `scripts/legacy/`
