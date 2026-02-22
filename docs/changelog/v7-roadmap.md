@@ -1,21 +1,31 @@
-# v7 Roadmap
+# v8 Roadmap
 
-## v7.0 (current baseline)
+## v8.0 (current release)
 
-- Build from 1.4 architecture.
-- No compressor, limiter, soft clipper, or auto mode.
-- Focus on capture integrity, sender stability, and diagnostics.
+- Transport-first baseline with explicit Opus music SDP guard:
+  - `usedtx=0`
+  - `stereo=1`, `sprop-stereo=1`
+  - `maxplaybackrate=48000`, `sprop-maxcapturerate=48000`
+  - `maxaveragebitrate=128000`
+  - `useinbandfec=1`
+  - remove `cbr`
+- Strict stereo gate diagnostics and full gate command:
+  - `mgameStereoProbe()`
+  - `mgameGateCheck()`
+- Runtime profile switching:
+  - `strict` (default)
+  - `compat_v52` fallback with gain-stage support and live `replaceTrack` best effort.
 
-## v7.1 gate (only after v7.0 acceptance)
+## v8.1 gate (only after v8.0 acceptance)
 
-Additions are allowed only if v7.0 passes continuity and stereo checks:
+Additions are allowed only if v8.0 repeatedly passes continuity and stereo checks:
 
-1. Reintroduce gain-only stage with module-scope GainNode and live-safe updates.
-2. Keep static transparent default mode.
-3. Add auto-mode prototype behind explicit command toggle only.
+1. Harden compat live fallback behavior under renegotiation churn.
+2. Expand Opus guard observability in `mgameInspect()` for multi-sender sessions.
+3. Optional minimal auto-fallback policy (strict -> compat) behind explicit command toggle.
 
-## v7.1 acceptance preconditions
+## v8.1 acceptance preconditions
 
 - No recurring dropouts in controlled continuous source tests.
 - Stereo probe no longer flags persistent dual-mono collapse on stereo test material.
-- Outbound sender stats remain stable without repeated forced reconfiguration loops.
+- `mgameGateCheck()` passes in repeated music-only and voice+music runs.

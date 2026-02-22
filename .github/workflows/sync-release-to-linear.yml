@@ -1,0 +1,314 @@
+name: Sync Release To Linear
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, edited, reopened, synchronize]
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync-release-pr:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development' }}
+    concurrency:
+      group: linear-release-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
+      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
+    steps:
+      - name: Validate configuration
+        run: |
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "Missing required secret: LINEAR_API_KEY"
+            exit 1
+          fi
+          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
+            echo "Missing required repo variable: LINEAR_TEAM_ID"
+            exit 1
+          fi
+          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
+            echo "Missing required repo variable: LINEAR_PROJECT_ID"
+            exit 1
+          fi
+
+      - name: Build release context
+        id: context
+        run: |
+          PR_NUMBER="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
+          PR_TITLE="$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
+          PR_BODY="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
+          PR_URL="$(jq -r '.pull_request.html_url // ""' "$GITHUB_EVENT_PATH")"
+          HEAD_SHA="$(jq -r '.pull_request.head.sha // ""' "$GITHUB_EVENT_PATH")"
+
+          VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,3}([-.][A-Za-z0-9._]+)?' | head -n 1 || true)"
+          if [ -z "$VERSION" ]; then
+            VERSION="release"
+          fi
+
+          LINEAR_TITLE="[Release ${VERSION}] Promote development -> master (GH PR #${PR_NUMBER})"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "Automated release tracking for development -> master promotion." \
+            "" \
+            "GitHub PR: ${PR_URL}" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "PR number: #${PR_NUMBER}" \
+            "PR title: ${PR_TITLE}" \
+            "Head SHA: ${HEAD_SHA}" \
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Updated at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "" \
+            "PR body:" \
+            "${PR_BODY}")"
+
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "linear_title=${LINEAR_TITLE}" >> "$GITHUB_OUTPUT"
+          DELIMITER="EOF_$(date +%s)_$RANDOM"
+          {
+            echo "linear_description<<${DELIMITER}"
+            echo "${LINEAR_DESCRIPTION}"
+            echo "${DELIMITER}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Find existing Linear mapping comment on PR
+        id: mapping
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.payload.pull_request.number;
+            const markerId = /<!--\s*linear-release-ticket-id:([^\s>]+)\s*-->/i;
+            const markerIdentifier = /<!--\s*linear-release-ticket-identifier:([^\s>]+)\s*-->/i;
+            const markerUrl = /<!--\s*linear-release-ticket-url:([^\s>]+)\s*-->/i;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const found = comments.find((comment) => markerId.test(comment.body || ""));
+            if (!found) {
+              core.setOutput('comment_id', '');
+              core.setOutput('linear_id', '');
+              core.setOutput('linear_identifier', '');
+              core.setOutput('linear_url', '');
+              return;
+            }
+
+            const body = found.body || '';
+            const linearId = body.match(markerId)?.[1] || '';
+            const linearIdentifier = body.match(markerIdentifier)?.[1] || '';
+            const linearUrl = body.match(markerUrl)?.[1] || '';
+
+            core.setOutput('comment_id', String(found.id));
+            core.setOutput('linear_id', linearId);
+            core.setOutput('linear_identifier', linearIdentifier);
+            core.setOutput('linear_url', linearUrl);
+
+      - name: Upsert Linear release issue
+        id: linear
+        env:
+          LINEAR_TITLE: ${{ steps.context.outputs.linear_title }}
+          LINEAR_DESCRIPTION: ${{ steps.context.outputs.linear_description }}
+          EXISTING_LINEAR_ID: ${{ steps.mapping.outputs.linear_id }}
+        run: |
+          if [ -n "$EXISTING_LINEAR_ID" ]; then
+            GRAPHQL_PAYLOAD="$(jq -n \
+              --arg id "$EXISTING_LINEAR_ID" \
+              --arg title "$LINEAR_TITLE" \
+              --arg description "$LINEAR_DESCRIPTION" \
+              '{
+                query: "mutation($id:String!, $input: IssueUpdateInput!){ issueUpdate(id:$id,input:$input){ success issue { id identifier title url } } }",
+                variables: {
+                  id: $id,
+                  input: {
+                    title: $title,
+                    description: $description
+                  }
+                }
+              }'
+            )"
+
+            RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: ${LINEAR_API_KEY}" \
+              --data-binary "$GRAPHQL_PAYLOAD")"
+
+            SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.success // false')"
+            if [ "$SUCCESS" != "true" ]; then
+              echo "Linear issueUpdate failed:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            LINEAR_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.issue.id')"
+            LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.issue.identifier')"
+            LINEAR_URL="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.issue.url')"
+            ACTION="updated"
+          else
+            GRAPHQL_PAYLOAD="$(jq -n \
+              --arg teamId "$LINEAR_TEAM_ID" \
+              --arg projectId "$LINEAR_PROJECT_ID" \
+              --arg title "$LINEAR_TITLE" \
+              --arg description "$LINEAR_DESCRIPTION" \
+              '{
+                query: "mutation($input: IssueCreateInput!){ issueCreate(input:$input){ success issue { id identifier title url } } }",
+                variables: {
+                  input: {
+                    teamId: $teamId,
+                    projectId: $projectId,
+                    title: $title,
+                    description: $description
+                  }
+                }
+              }'
+            )"
+
+            RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: ${LINEAR_API_KEY}" \
+              --data-binary "$GRAPHQL_PAYLOAD")"
+
+            SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.success // false')"
+            if [ "$SUCCESS" != "true" ]; then
+              echo "Linear issueCreate failed:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+
+            LINEAR_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.id')"
+            LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.identifier')"
+            LINEAR_URL="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.url')"
+            ACTION="created"
+          fi
+
+          echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
+          echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
+          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
+          echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert PR comment with Linear release link
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.payload.pull_request.number;
+            const commentId = `${{ steps.mapping.outputs.comment_id }}`;
+            const action = `${{ steps.linear.outputs.action }}`;
+            const linearId = `${{ steps.linear.outputs.linear_id }}`;
+            const linearIdentifier = `${{ steps.linear.outputs.linear_identifier }}`;
+            const linearUrl = `${{ steps.linear.outputs.linear_url }}`;
+
+            const body = [
+              `<!-- linear-release-ticket-id:${linearId} -->`,
+              `<!-- linear-release-ticket-identifier:${linearIdentifier} -->`,
+              `<!-- linear-release-ticket-url:${linearUrl} -->`,
+              'Linear release tracking synced automatically.',
+              '',
+              `- Action: ${action}`,
+              `- Ticket: ${linearIdentifier}`,
+              `- URL: ${linearUrl}`,
+            ].join('\n');
+
+            if (commentId) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: Number(commentId),
+                body,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body,
+            });
+
+  sync-release-tag:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.run_attempt == 1 }}
+    concurrency:
+      group: linear-release-tag-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
+      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
+    steps:
+      - name: Validate configuration
+        run: |
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "Missing required secret: LINEAR_API_KEY"
+            exit 1
+          fi
+          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
+            echo "Missing required repo variable: LINEAR_TEAM_ID"
+            exit 1
+          fi
+          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
+            echo "Missing required repo variable: LINEAR_PROJECT_ID"
+            exit 1
+          fi
+
+      - name: Create Linear release tag ticket
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
+          COMMIT_SHA="${GITHUB_SHA}"
+
+          LINEAR_TITLE="[Release Tag ${TAG_NAME}] ${GITHUB_REPOSITORY}"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "Automated release tag tracking." \
+            "" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "Tag: ${TAG_NAME}" \
+            "Release URL: ${TAG_URL}" \
+            "Commit SHA: ${COMMIT_SHA}" \
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Created at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+
+          GRAPHQL_PAYLOAD="$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            --arg projectId "$LINEAR_PROJECT_ID" \
+            --arg title "$LINEAR_TITLE" \
+            --arg description "$LINEAR_DESCRIPTION" \
+            '{
+              query: "mutation($input: IssueCreateInput!){ issueCreate(input:$input){ success issue { id identifier title url } } }",
+              variables: {
+                input: {
+                  teamId: $teamId,
+                  projectId: $projectId,
+                  title: $title,
+                  description: $description
+                }
+              }
+            }'
+          )"
+
+          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$GRAPHQL_PAYLOAD")"
+
+          SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.success // false')"
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Linear issueCreate failed:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.identifier')"
+          LINEAR_URL="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.url')"
+
+          echo "Created Linear release tag ticket: ${LINEAR_IDENTIFIER} (${LINEAR_URL})"
