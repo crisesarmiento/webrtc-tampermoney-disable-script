@@ -53,9 +53,13 @@ Release exemption:
   - Trigger: `pull_request` to `master` when `head == development`
   - Upserts/creates Linear release tracking ticket for the release PR.
 
+- `.github/workflows/release-merge-create-tag.yml`
+  - Trigger: release PR `development -> master` when merged.
+  - Extracts `v*` version from PR title/body, creates tag on merge commit, and upserts Linear tag ticket for the release.
+
 - `.github/workflows/sync-release-tag-to-linear.yml`
   - Trigger: `push` tags matching `v*`
-  - Creates Linear release tracking ticket for published tag events.
+  - Creates Linear release tracking ticket for manual/published tag push events.
 
 ## 4) Codex review model (OAuth app-based)
 
