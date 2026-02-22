@@ -41,6 +41,22 @@ For Linear/GitHub/Codex automation setup, use:
 
 - `docs/setup/linear-github-codex-automation.md`
 
+## Workflow
+
+- Branch format: `codex/CE-<number>-<slug>`
+- PR title format: `[CE-<number>] <short title>`
+- Optional magic word in PR body/commit: `Closes CE-<number>`
+- Keep the same `CE-<number>` in branch, title, and any magic-word line.
+- OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
+
+Example:
+
+```text
+Branch: codex/CE-321-fix-stereo-gate
+Title:  [CE-321] Fix stereo gate false positive
+Body:   Closes CE-321
+```
+
 ## Runtime Diagnostics
 
 Available console commands in `v8.0-transport-first`:

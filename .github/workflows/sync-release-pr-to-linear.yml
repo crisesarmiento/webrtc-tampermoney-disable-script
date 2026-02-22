@@ -1,12 +1,9 @@
-name: Sync Release To Linear
+name: Sync Release PR To Linear
 
 on:
   pull_request:
     branches: [master]
     types: [opened, edited, reopened, synchronize]
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: read
@@ -16,7 +13,7 @@ permissions:
 jobs:
   sync-release-pr:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development' }}
+    if: ${{ github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development' }}
     concurrency:
       group: linear-release-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
@@ -211,12 +208,12 @@ jobs:
               `<!-- linear-release-ticket-id:${linearId} -->`,
               `<!-- linear-release-ticket-identifier:${linearIdentifier} -->`,
               `<!-- linear-release-ticket-url:${linearUrl} -->`,
-              'Linear release tracking synced automatically.',
-              '',
+              "Linear release tracking synced automatically.",
+              "",
               `- Action: ${action}`,
               `- Ticket: ${linearIdentifier}`,
               `- URL: ${linearUrl}`,
-            ].join('\n');
+            ].join("\n");
 
             if (commentId) {
               await github.rest.issues.updateComment({
@@ -234,81 +231,3 @@ jobs:
               issue_number: issueNumber,
               body,
             });
-
-  sync-release-tag:
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.run_attempt == 1 }}
-    concurrency:
-      group: linear-release-tag-${{ github.ref }}
-      cancel-in-progress: false
-    env:
-      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
-      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
-    steps:
-      - name: Validate configuration
-        run: |
-          if [ -z "${LINEAR_API_KEY:-}" ]; then
-            echo "Missing required secret: LINEAR_API_KEY"
-            exit 1
-          fi
-          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_TEAM_ID"
-            exit 1
-          fi
-          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_PROJECT_ID"
-            exit 1
-          fi
-
-      - name: Create Linear release tag ticket
-        run: |
-          TAG_NAME="${GITHUB_REF_NAME}"
-          TAG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
-          COMMIT_SHA="${GITHUB_SHA}"
-
-          LINEAR_TITLE="[Release Tag ${TAG_NAME}] ${GITHUB_REPOSITORY}"
-          LINEAR_DESCRIPTION="$(printf '%s\n' \
-            "Automated release tag tracking." \
-            "" \
-            "Repository: ${GITHUB_REPOSITORY}" \
-            "Tag: ${TAG_NAME}" \
-            "Release URL: ${TAG_URL}" \
-            "Commit SHA: ${COMMIT_SHA}" \
-            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-            "Created at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)")"
-
-          GRAPHQL_PAYLOAD="$(jq -n \
-            --arg teamId "$LINEAR_TEAM_ID" \
-            --arg projectId "$LINEAR_PROJECT_ID" \
-            --arg title "$LINEAR_TITLE" \
-            --arg description "$LINEAR_DESCRIPTION" \
-            '{
-              query: "mutation($input: IssueCreateInput!){ issueCreate(input:$input){ success issue { id identifier title url } } }",
-              variables: {
-                input: {
-                  teamId: $teamId,
-                  projectId: $projectId,
-                  title: $title,
-                  description: $description
-                }
-              }
-            }'
-          )"
-
-          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: ${LINEAR_API_KEY}" \
-            --data-binary "$GRAPHQL_PAYLOAD")"
-
-          SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.success // false')"
-          if [ "$SUCCESS" != "true" ]; then
-            echo "Linear issueCreate failed:"
-            echo "$RESPONSE"
-            exit 1
-          fi
-
-          LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.identifier')"
-          LINEAR_URL="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.url')"
-
-          echo "Created Linear release tag ticket: ${LINEAR_IDENTIFIER} (${LINEAR_URL})"

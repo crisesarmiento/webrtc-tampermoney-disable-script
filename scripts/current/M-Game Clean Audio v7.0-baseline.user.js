@@ -927,69 +927,83 @@
     if (!OriginalPC?.prototype) return;
     if (OriginalPC.prototype.__mgameSdpGuardInstalled) return;
 
-    if (typeof OriginalPC.prototype.setLocalDescription === 'function') {
-      const originalSetLocalDescription = OriginalPC.prototype.setLocalDescription;
+    const originalSetLocalDescription =
+      typeof OriginalPC.prototype.setLocalDescription === 'function'
+        ? OriginalPC.prototype.setLocalDescription
+        : null;
+    const originalCreateOffer =
+      typeof OriginalPC.prototype.createOffer === 'function'
+        ? OriginalPC.prototype.createOffer
+        : null;
+    const originalCreateAnswer =
+      typeof OriginalPC.prototype.createAnswer === 'function'
+        ? OriginalPC.prototype.createAnswer
+        : null;
+
+    function optimizeDescriptionSdp(description, context) {
+      if (!description?.sdp) return description;
+      const optimized = optimizeOpusSDP(description.sdp, context);
+      if (optimized === description.sdp) return description;
+      return { type: description.type, sdp: optimized };
+    }
+
+    if (originalSetLocalDescription) {
       OriginalPC.prototype.setLocalDescription = function (desc) {
         if (desc?.sdp) {
-          const optimized = optimizeOpusSDP(desc.sdp, 'setLocalDescription');
-          if (optimized !== desc.sdp) {
-            desc = { ...desc, sdp: optimized };
-          }
-          return originalSetLocalDescription.call(this, desc);
+          return originalSetLocalDescription.call(
+            this,
+            optimizeDescriptionSdp(desc, 'setLocalDescription')
+          );
         }
 
-        return originalSetLocalDescription.call(this, desc).then((result) => {
-          const generated = this.localDescription;
-          if (!generated?.sdp) return result;
+        if (desc === undefined || desc === null) {
+          const signalingState = this.signalingState;
+          const generator =
+            signalingState === 'have-remote-offer' ? originalCreateAnswer : originalCreateOffer;
+          const autoContext =
+            signalingState === 'have-remote-offer'
+              ? 'setLocalDescription-auto-answer'
+              : 'setLocalDescription-auto-offer';
 
-          const optimizedGenerated = optimizeOpusSDP(generated.sdp, 'setLocalDescription-auto');
-          if (optimizedGenerated === generated.sdp) return result;
-
-          return originalSetLocalDescription
-            .call(this, { type: generated.type, sdp: optimizedGenerated })
-            .then(() => {
-              log('SDP guard auto-rewrite applied after setLocalDescription() no-arg path.', {
-                type: generated.type || null,
+          if (typeof generator === 'function') {
+            return generator
+              .call(this)
+              .then((generated) => {
+                const guarded = optimizeDescriptionSdp(generated, autoContext);
+                if (guarded?.sdp && guarded.sdp !== generated?.sdp) {
+                  log('SDP guard applied before setLocalDescription() no-arg path.', {
+                    type: guarded.type || null,
+                    context: autoContext,
+                  });
+                }
+                return originalSetLocalDescription.call(this, guarded);
+              })
+              .catch((error) => {
+                warn(
+                  'SDP guard no-arg generation failed; falling back to browser setLocalDescription():',
+                  error?.message || error
+                );
+                return originalSetLocalDescription.call(this);
               });
-              return result;
-            })
-            .catch((error) => {
-              warn(
-                'SDP guard auto-rewrite failed after setLocalDescription() no-arg path:',
-                error?.message || error
-              );
-              return result;
-            });
-        });
+          }
+        }
+
+        return originalSetLocalDescription.call(this, desc);
       };
     }
 
-    if (typeof OriginalPC.prototype.createOffer === 'function') {
-      const originalCreateOffer = OriginalPC.prototype.createOffer;
+    if (originalCreateOffer) {
       OriginalPC.prototype.createOffer = function (...args) {
         return originalCreateOffer.call(this, ...args).then((offer) => {
-          if (offer?.sdp) {
-            const optimized = optimizeOpusSDP(offer.sdp, 'createOffer');
-            if (optimized !== offer.sdp) {
-              offer.sdp = optimized;
-            }
-          }
-          return offer;
+          return optimizeDescriptionSdp(offer, 'createOffer');
         });
       };
     }
 
-    if (typeof OriginalPC.prototype.createAnswer === 'function') {
-      const originalCreateAnswer = OriginalPC.prototype.createAnswer;
+    if (originalCreateAnswer) {
       OriginalPC.prototype.createAnswer = function (...args) {
         return originalCreateAnswer.call(this, ...args).then((answer) => {
-          if (answer?.sdp) {
-            const optimized = optimizeOpusSDP(answer.sdp, 'createAnswer');
-            if (optimized !== answer.sdp) {
-              answer.sdp = optimized;
-            }
-          }
-          return answer;
+          return optimizeDescriptionSdp(answer, 'createAnswer');
         });
       };
     }

@@ -4,34 +4,28 @@
 
 - `development` is the integration branch.
 - `master` is the stable branch.
-- Open PRs into `development` from issue branches.
+- Normal work PRs target `development`.
 - Release PRs go from `development` to `master`.
 
-## Mandatory issue-first workflow
+## Mandatory Linear-first workflow
 
-Every discovered defect or enhancement must be tracked before implementation.
-
-1. Open (or confirm) a GitHub issue.
-2. Create one issue branch from `development`:
-   - Human branch: `issue/<id>-<slug>`
-   - Agent branch: `codex/issue-<id>-<slug>`
-3. Implement only that issue scope in the branch.
-4. Open PR from issue branch to `development`.
-5. Include a closing keyword in PR body: `Closes #<id>`.
-6. Merge PR to `development`; GitHub closes the linked issue.
-7. Promote `development` to `master` via release PR.
+1. Start from a Linear issue (`CE-<number>`).
+2. Create one branch from `development` using:
+   - `codex/CE-<number>-<slug>`
+3. Open PR to `development` with title:
+   - `[CE-<number>] <short title>`
+4. Optional in PR body or commit message:
+   - `Closes CE-<number>`
+5. Ensure branch ID and PR title ID are the same.
 
 Release PR rule:
-- `development -> master` release PRs are exempt from issue-branch checks in `require-linked-issue`.
-- Issue-first enforcement still applies to normal work PRs (issue branches into `development`).
 
-## Project priorities
+- `development -> master` release PRs are exempt from Linear branch/title checks.
 
-For the current line (`v7.0-baseline`):
+Strict enforcement toggle:
 
-1. Capture integrity first (continuity, level, stereo behavior).
-2. Diagnostics and reproducibility.
-3. Avoid adding DSP complexity unless explicitly gated.
+- Repo variable `STRICT_LINEAR_ENFORCEMENT` controls strict validation.
+- Default behavior is strict (`true`).
 
 ## Local checks before PR
 
@@ -45,8 +39,13 @@ bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_
 ## PR expectations
 
 - Use the PR template.
-- Link the issue explicitly and include `Closes #<id>`.
-- Confirm the issue existed before implementation.
+- Keep scope tied to one Linear issue.
 - Explain behavior changes and risks.
 - Include diagnostics output for audio-impacting changes.
 - Keep legacy files in `scripts/legacy` unchanged unless there is a specific archival reason.
+
+## AI review policy
+
+- Codex GitHub app integration (OAuth) is the single AI PR reviewer for this repo.
+- Disable CodeRabbit for this repository.
+- Keep review output aligned with `AGENTS.md`.

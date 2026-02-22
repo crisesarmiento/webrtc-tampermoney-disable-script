@@ -1,59 +1,87 @@
 # Linear + GitHub + Codex Automation
 
-This setup enables:
+This setup provides:
 
 1. GitHub issue opened -> Linear issue created automatically.
 2. Linear assignment event -> GitHub repository dispatch endpoint for Codex trigger handling.
-3. Release events tracked in Linear automatically (`development -> master` PRs and `v*` tags).
+3. Release tracking in Linear for `development -> master` PRs and `v*` tags.
+4. Strict Linear branch/title enforcement for normal work PRs.
+5. One AI reviewer source: Codex GitHub integration (OAuth).
 
 ## 1) Configure repository secrets and variables
 
-In GitHub repository settings:
+In GitHub repository settings, add:
 
 - Secret: `LINEAR_API_KEY`
-  - Your Linear API key (header format is raw key, not `Bearer`).
+  - Linear API key (raw key format, not `Bearer`).
 - Variable: `LINEAR_TEAM_ID`
-  - Example for this workspace: `a901c542-7bcb-4f89-9731-e753f16ee745` (`CE` team).
+  - Team ID for `CE`.
 - Variable: `LINEAR_PROJECT_ID`
-  - Project id for `WebRTC Audio Script (M-Game)`.
+  - Project ID for this repository.
+- Variable: `STRICT_LINEAR_ENFORCEMENT`
+  - Optional toggle for `.github/workflows/require-linked-issue.yml`.
+  - Default/recommended: `true`.
 
-## 2) GitHub issue to Linear sync
+Note:
 
-Workflow: `.github/workflows/sync-github-issue-to-linear.yml`
+- `OPENAI_API_KEY` is not required for this OAuth-first setup.
 
-Behavior:
+## 2) PR linking conventions (Linear-first)
 
-- Trigger: `issues.opened`
-- Creates Linear issue in configured team/project with title prefix:
-  - `[GH#<issue-number>] <github-title>`
-- Posts Linear link back to the GitHub issue as a comment.
+Required for normal work PRs:
 
-## 3) Linear assignment to Codex trigger bridge
+- Branch: `codex/CE-<number>-<slug>`
+- Title: `[CE-<number>] <short title>`
+- Branch ID and title ID must match.
 
-Workflow: `.github/workflows/codex-linear-assignment-dispatch.yml`
+Optional:
 
-This workflow accepts:
+- Magic word in PR body/commit, for example: `Closes CE-123`
+- If used, it must match the same `CE-<number>`.
 
-- `repository_dispatch` event type: `linear_issue_assigned_to_codex`
-- `workflow_dispatch` for manual testing
+Release exemption:
 
-Expected `repository_dispatch` payload fields:
+- `development -> master` release PRs are exempt from branch/title enforcement.
 
-- `linearIssueIdentifier` (or `linear_issue_identifier`)
-- `linearIssueUrl` (or `linear_issue_url`)
-- optional `githubIssueNumber` (or `github_issue_number`)
-- optional `title`
+## 3) Existing Linear sync workflows
 
-Behavior:
+- `.github/workflows/sync-github-issue-to-linear.yml`
+  - Trigger: `issues.opened`
+  - Creates Linear issue and comments link back on GitHub issue.
 
-- If `githubIssueNumber` is provided:
-  - posts a trigger comment on that GitHub issue.
-- Otherwise:
-  - creates a new GitHub issue with a trigger log.
+- `.github/workflows/sync-release-pr-to-linear.yml`
+  - Trigger: `pull_request` to `master` when `head == development`
+  - Upserts/creates Linear release tracking ticket for the release PR.
 
-## 4) External trigger example (for Linear webhook bridge)
+- `.github/workflows/release-merge-create-tag.yml`
+  - Trigger: release PR `development -> master` when merged.
+  - Extracts `v*` version from PR title/body, creates tag on merge commit, and upserts Linear tag ticket for the release.
 
-Use a service (n8n, Zapier, Cloudflare Worker, etc.) that receives Linear webhook events and forwards to GitHub:
+- `.github/workflows/sync-release-tag-to-linear.yml`
+  - Trigger: `push` tags matching `v*`
+  - Creates Linear release tracking ticket for manual/published tag push events.
+
+## 4) Codex review model (OAuth app-based)
+
+Codex PR reviews are provided by the Codex GitHub integration (OAuth), not by a CI workflow.
+
+Required repository-level policy:
+
+- Follow `AGENTS.md` review output contract (structured headings and concise findings).
+
+## 5) Disable duplicate AI reviewers (mandatory)
+
+To keep a single AI reviewer source, disable:
+
+1. CodeRabbit app on this repository.
+
+Keep only:
+
+- Codex GitHub integration review behavior for this repository.
+
+## 6) External trigger example (Linear webhook bridge)
+
+Use a service (n8n, Zapier, Cloudflare Worker, etc.) to forward Linear webhook events to GitHub:
 
 ```bash
 curl -X POST \
@@ -70,26 +98,3 @@ curl -X POST \
     }
   }'
 ```
-
-## 5) Release tracking to Linear
-
-Workflow: `.github/workflows/sync-release-to-linear.yml`
-
-Behavior:
-
-- Trigger A: `pull_request` to `master` when `head == development`
-  - Upserts (create/update) one Linear release ticket.
-  - Keeps the mapping in a PR comment using hidden markers:
-    - `linear-release-ticket-id`
-    - `linear-release-ticket-identifier`
-    - `linear-release-ticket-url`
-  - On each PR sync/edit, updates the same Linear ticket instead of creating duplicates.
-
-- Trigger B: `push` tag matching `v*`
-  - Creates a Linear release tag ticket for the published version tag.
-
-## 6) Notes
-
-- This repository now supports agentic tracking and trigger logging.
-- Actual autonomous code execution still depends on your Codex runner/orchestration layer.
-- Keep issue-first policy: every run should trace to a GitHub issue and Linear issue.
