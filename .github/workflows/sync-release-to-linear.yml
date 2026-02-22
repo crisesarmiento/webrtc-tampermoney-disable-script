@@ -55,28 +55,27 @@ jobs:
           fi
 
           LINEAR_TITLE="[Release ${VERSION}] Promote development -> master (GH PR #${PR_NUMBER})"
-          LINEAR_DESCRIPTION="$(cat <<EOF
-Automated release tracking for development -> master promotion.
-
-GitHub PR: ${PR_URL}
-Repository: ${GITHUB_REPOSITORY}
-PR number: #${PR_NUMBER}
-PR title: ${PR_TITLE}
-Head SHA: ${HEAD_SHA}
-Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-Updated at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-PR body:
-${PR_BODY}
-EOF
-)"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "Automated release tracking for development -> master promotion." \
+            "" \
+            "GitHub PR: ${PR_URL}" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "PR number: #${PR_NUMBER}" \
+            "PR title: ${PR_TITLE}" \
+            "Head SHA: ${HEAD_SHA}" \
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Updated at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            "" \
+            "PR body:" \
+            "${PR_BODY}")"
 
           echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "linear_title=${LINEAR_TITLE}" >> "$GITHUB_OUTPUT"
+          DELIMITER="EOF_$(date +%s)_$RANDOM"
           {
-            echo "linear_description<<EOF"
+            echo "linear_description<<${DELIMITER}"
             echo "${LINEAR_DESCRIPTION}"
-            echo "EOF"
+            echo "${DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Find existing Linear mapping comment on PR
@@ -269,17 +268,15 @@ EOF
           COMMIT_SHA="${GITHUB_SHA}"
 
           LINEAR_TITLE="[Release Tag ${TAG_NAME}] ${GITHUB_REPOSITORY}"
-          LINEAR_DESCRIPTION="$(cat <<EOF
-Automated release tag tracking.
-
-Repository: ${GITHUB_REPOSITORY}
-Tag: ${TAG_NAME}
-Release URL: ${TAG_URL}
-Commit SHA: ${COMMIT_SHA}
-Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-Created at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)
-EOF
-)"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "Automated release tag tracking." \
+            "" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "Tag: ${TAG_NAME}" \
+            "Release URL: ${TAG_URL}" \
+            "Commit SHA: ${COMMIT_SHA}" \
+            "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "Created at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)")"
 
           GRAPHQL_PAYLOAD="$(jq -n \
             --arg teamId "$LINEAR_TEAM_ID" \
