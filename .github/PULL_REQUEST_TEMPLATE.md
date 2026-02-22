@@ -2,10 +2,12 @@
 
 Describe what changed and why.
 
-## Linked Issue
+## Linear Issue
 
-- Issue: #<id>
-- Closing keyword (required): `Closes #<id>`
+- Linear ID: `CE-<number>`
+- Branch format: `codex/CE-<number>-<slug>`
+- PR title format: `[CE-<number>] <short title>`
+- Optional magic word example: `Closes CE-<number>`
 
 ## Scope
 
@@ -24,14 +26,9 @@ node --check "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
 bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav"
 ```
 
-## Audio Risk Checklist
+## Checklist
 
-- [ ] Issue was created before implementation started
-- [ ] No new forced DSP stages added to `v7.0-baseline`
-- [ ] No periodic `setParameters()` spam loops introduced
-- [ ] Stereo integrity behavior considered
-- [ ] Dropout behavior considered
-
-## Screenshots / Evidence
-
-Attach console output or sample capture comparisons when relevant.
+- [ ] Branch and PR title include the same Linear ID
+- [ ] Local checks pass (syntax + metrics)
+- [ ] Security or behavior-impacting risks are documented
+- [ ] Screenshot/evidence attached when UI/audio behavior changed
