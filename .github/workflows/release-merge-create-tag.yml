@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [master]
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Release PR number to process (development -> master, already merged)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,9 +19,9 @@ permissions:
 jobs:
   create-release-tag:
     runs-on: ubuntu-latest
-    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development' }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development') || github.event_name == 'workflow_dispatch' }}
     concurrency:
-      group: release-merge-tag-${{ github.event.pull_request.number }}
+      group: release-merge-tag-${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.pr_number }}
       cancel-in-progress: false
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
@@ -37,20 +43,66 @@ jobs:
             exit 1
           fi
 
+      - name: Load release PR context
+        id: pr
+        uses: actions/github-script@v7
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const isDispatch = context.eventName === 'workflow_dispatch';
+            let pr;
+
+            if (isDispatch) {
+              const prNumber = Number(process.env.INPUT_PR_NUMBER || '0');
+              if (!prNumber) {
+                core.setFailed('workflow_dispatch requires numeric input pr_number');
+                return;
+              }
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              pr = response.data;
+            } else {
+              pr = context.payload.pull_request;
+            }
+
+            if (!pr) {
+              core.setFailed('No pull request payload available.');
+              return;
+            }
+            if (!pr.merged) {
+              core.setFailed(`PR #${pr.number} is not merged.`);
+              return;
+            }
+            if (pr.base?.ref !== 'master' || pr.head?.ref !== 'development') {
+              core.setFailed(`PR #${pr.number} is ${pr.head?.ref} -> ${pr.base?.ref}; expected development -> master.`);
+              return;
+            }
+
+            const mergeSha = pr.merge_commit_sha || '';
+            if (!mergeSha) {
+              core.setFailed(`PR #${pr.number} is missing merge_commit_sha.`);
+              return;
+            }
+
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('pr_title', pr.title || '');
+            core.setOutput('pr_body', pr.body || '');
+            core.setOutput('pr_url', pr.html_url || '');
+            core.setOutput('merge_sha', mergeSha);
+
       - name: Build release context
         id: context
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          PR_TITLE: ${{ steps.pr.outputs.pr_title }}
+          PR_BODY: ${{ steps.pr.outputs.pr_body }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
         run: |
-          PR_NUMBER="$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")"
-          PR_TITLE="$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
-          PR_BODY="$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH")"
-          PR_URL="$(jq -r '.pull_request.html_url // ""' "$GITHUB_EVENT_PATH")"
-          MERGE_SHA="$(jq -r '.pull_request.merge_commit_sha // ""' "$GITHUB_EVENT_PATH")"
-
-          if [ -z "$MERGE_SHA" ] || [ "$MERGE_SHA" = "null" ]; then
-            echo "Missing merge commit SHA in pull_request payload."
-            exit 1
-          fi
-
           VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,3}([-.][A-Za-z0-9._]+)?' | head -n 1 || true)"
           if [ -z "$VERSION" ]; then
             echo "Could not find release version tag (example: v8.1) in PR title/body."
@@ -86,12 +138,42 @@ jobs:
             echo "${DELIMITER}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Find existing Linear tag mapping comment on PR
-        id: mapping
+      - name: Find existing release PR mapping comment on PR
+        id: release_mapping
         uses: actions/github-script@v7
         with:
           script: |
-            const issueNumber = context.payload.pull_request.number;
+            const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
+            const markerId = /<!--\s*linear-release-ticket-id:([^\s>]+)\s*-->/i;
+            const markerIdentifier = /<!--\s*linear-release-ticket-identifier:([^\s>]+)\s*-->/i;
+            const markerUrl = /<!--\s*linear-release-ticket-url:([^\s>]+)\s*-->/i;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const found = comments.find((comment) => markerId.test(comment.body || ''));
+            if (!found) {
+              core.setOutput('linear_id', '');
+              core.setOutput('linear_identifier', '');
+              core.setOutput('linear_url', '');
+              return;
+            }
+
+            const body = found.body || '';
+            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
+            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
+            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
+
+      - name: Find existing release tag mapping comment on PR
+        id: tag_mapping
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
             const markerIdentifier = /<!--\s*linear-release-tag-ticket-identifier:([^\s>]+)\s*-->/i;
             const markerUrl = /<!--\s*linear-release-tag-ticket-url:([^\s>]+)\s*-->/i;
@@ -103,7 +185,7 @@ jobs:
               per_page: 100,
             });
 
-            const found = comments.find((comment) => markerId.test(comment.body || ""));
+            const found = comments.find((comment) => markerId.test(comment.body || ''));
             if (!found) {
               core.setOutput('comment_id', '');
               core.setOutput('linear_id', '');
@@ -113,14 +195,35 @@ jobs:
             }
 
             const body = found.body || '';
-            const linearId = body.match(markerId)?.[1] || '';
-            const linearIdentifier = body.match(markerIdentifier)?.[1] || '';
-            const linearUrl = body.match(markerUrl)?.[1] || '';
-
             core.setOutput('comment_id', String(found.id));
-            core.setOutput('linear_id', linearId);
-            core.setOutput('linear_identifier', linearIdentifier);
-            core.setOutput('linear_url', linearUrl);
+            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
+            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
+            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
+
+      - name: Resolve Linear completed state id
+        id: done_state
+        run: |
+          GRAPHQL_PAYLOAD="$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            '{
+              query: "query($teamId:String!){ team(id:$teamId){ states{nodes{id name type}} } }",
+              variables: { teamId: $teamId }
+            }'
+          )"
+
+          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$GRAPHQL_PAYLOAD")"
+
+          DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
+          if [ -z "$DONE_STATE_ID" ] || [ "$DONE_STATE_ID" = "null" ]; then
+            echo "Could not resolve completed state id for team ${LINEAR_TEAM_ID}."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "done_state_id=${DONE_STATE_ID}" >> "$GITHUB_OUTPUT"
 
       - name: Create tag if missing
         id: tag
@@ -159,11 +262,11 @@ jobs:
             core.setOutput('tag_action', 'created');
 
       - name: Upsert Linear release tag issue
-        id: linear
+        id: linear_tag
         env:
           LINEAR_TITLE: ${{ steps.context.outputs.linear_title }}
           LINEAR_DESCRIPTION: ${{ steps.context.outputs.linear_description }}
-          EXISTING_LINEAR_ID: ${{ steps.mapping.outputs.linear_id }}
+          EXISTING_LINEAR_ID: ${{ steps.tag_mapping.outputs.linear_id }}
         run: |
           if [ -n "$EXISTING_LINEAR_ID" ]; then
             GRAPHQL_PAYLOAD="$(jq -n \
@@ -240,16 +343,59 @@ jobs:
           echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
           echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
 
+      - name: Close Linear release PR issue
+        id: linear_release_close
+        env:
+          RELEASE_LINEAR_ID: ${{ steps.release_mapping.outputs.linear_id }}
+          DONE_STATE_ID: ${{ steps.done_state.outputs.done_state_id }}
+        run: |
+          if [ -z "$RELEASE_LINEAR_ID" ]; then
+            echo "No release PR Linear mapping found; skipping closure."
+            echo "action=skipped_no_mapping" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          GRAPHQL_PAYLOAD="$(jq -n \
+            --arg id "$RELEASE_LINEAR_ID" \
+            --arg stateId "$DONE_STATE_ID" \
+            '{
+              query: "mutation($id:String!, $input: IssueUpdateInput!){ issueUpdate(id:$id,input:$input){ success issue { id identifier title url } } }",
+              variables: {
+                id: $id,
+                input: {
+                  stateId: $stateId
+                }
+              }
+            }'
+          )"
+
+          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$GRAPHQL_PAYLOAD")"
+
+          SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.success // false')"
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Linear issueUpdate (release close) failed:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "action=closed" >> "$GITHUB_OUTPUT"
+
       - name: Upsert PR comment with release tag status
         uses: actions/github-script@v7
         with:
           script: |
-            const issueNumber = context.payload.pull_request.number;
-            const commentId = `${{ steps.mapping.outputs.comment_id }}`;
-            const linearId = `${{ steps.linear.outputs.linear_id }}`;
-            const linearIdentifier = `${{ steps.linear.outputs.linear_identifier }}`;
-            const linearUrl = `${{ steps.linear.outputs.linear_url }}`;
-            const linearAction = `${{ steps.linear.outputs.action }}`;
+            const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
+            const commentId = `${{ steps.tag_mapping.outputs.comment_id }}`;
+            const linearId = `${{ steps.linear_tag.outputs.linear_id }}`;
+            const linearIdentifier = `${{ steps.linear_tag.outputs.linear_identifier }}`;
+            const linearUrl = `${{ steps.linear_tag.outputs.linear_url }}`;
+            const linearAction = `${{ steps.linear_tag.outputs.action }}`;
+            const releaseLinearIdentifier = `${{ steps.release_mapping.outputs.linear_identifier }}`;
+            const releaseLinearUrl = `${{ steps.release_mapping.outputs.linear_url }}`;
+            const releaseCloseAction = `${{ steps.linear_release_close.outputs.action }}`;
             const tagAction = `${{ steps.tag.outputs.tag_action }}`;
             const tagName = `${{ steps.context.outputs.tag_name }}`;
             const tagUrl = `${{ steps.context.outputs.tag_url }}`;
@@ -258,15 +404,18 @@ jobs:
               `<!-- linear-release-tag-ticket-id:${linearId} -->`,
               `<!-- linear-release-tag-ticket-identifier:${linearIdentifier} -->`,
               `<!-- linear-release-tag-ticket-url:${linearUrl} -->`,
-              "Release merge tag automation executed.",
-              "",
+              'Release merge tag automation executed.',
+              '',
               `- Tag: ${tagName}`,
               `- Tag URL: ${tagUrl}`,
               `- Tag action: ${tagAction}`,
-              `- Linear action: ${linearAction}`,
-              `- Linear ticket: ${linearIdentifier}`,
-              `- Linear URL: ${linearUrl}`,
-            ].join("\n");
+              `- Linear tag action: ${linearAction}`,
+              `- Linear tag ticket: ${linearIdentifier}`,
+              `- Linear tag URL: ${linearUrl}`,
+              `- Release PR ticket: ${releaseLinearIdentifier || 'not found'}`,
+              `- Release PR ticket URL: ${releaseLinearUrl || 'n/a'}`,
+              `- Release PR close action: ${releaseCloseAction}`,
+            ].join('\n');
 
             if (commentId) {
               await github.rest.issues.updateComment({

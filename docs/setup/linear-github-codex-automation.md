@@ -54,8 +54,9 @@ Release exemption:
   - Upserts/creates Linear release tracking ticket for the release PR.
 
 - `.github/workflows/release-merge-create-tag.yml`
-  - Trigger: release PR `development -> master` when merged.
-  - Extracts `v*` version from PR title/body, creates tag on merge commit, and upserts Linear tag ticket for the release.
+  - Trigger A: release PR `development -> master` when merged.
+  - Trigger B: manual `workflow_dispatch` with `pr_number` for backfill.
+  - Extracts `v*` version from PR title/body, creates tag on merge commit, upserts Linear tag ticket, and closes the release PR Linear ticket to `Done`.
 
 - `.github/workflows/sync-release-tag-to-linear.yml`
   - Trigger: `push` tags matching `v*`
