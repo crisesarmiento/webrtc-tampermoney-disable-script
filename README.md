@@ -2,7 +2,7 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository currently focuses on one priority for `v8.0`: **music transport integrity first**.
+This repository is now tracking the `v8.1` release baseline: **music transport integrity first, with gated hardening landed**.
 
 - Transport-first baseline (Opus music SDP guard + sender hints)
 - Strict stereo gate diagnostics
@@ -12,7 +12,7 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 ## What Is Included
 
 - Current script:
-  - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+  - `scripts/current/M-Game Clean Audio.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
@@ -23,9 +23,11 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
+> Maintainer reminder: keep `scripts/current/M-Game Clean Audio.user.js` as the stable import path, and archive versioned releases under `scripts/legacy/`.
+
 ## Quick Start
 
-1. Import `scripts/current/M-Game Clean Audio v7.0-baseline.user.js` into Tampermonkey.
+1. Import `scripts/current/M-Game Clean Audio.user.js` into Tampermonkey.
 2. Enable the script and reload Atlas/X tab.
 3. In Atlas, select mic input:
    - `Default - M-Game RGB Dual Stream`
@@ -111,8 +113,8 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 
 ## v8 Roadmap
 
-- `v8.0` (current): transport-first + strict stereo gates + `compat_v52` fallback
-- `v8.1` (gated): incremental hardening only after repeated gate-check passes
+- `v8.0`: transport-first + strict stereo gates + `compat_v52` fallback
+- `v8.1` (released): gated hardening promoted from `development` to `master` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
 

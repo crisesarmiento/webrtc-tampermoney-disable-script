@@ -40,12 +40,16 @@ This file tracks historical userscript variants moved into `scripts/legacy/`.
   - Addresses several v6.3 issues.
   - Keeps DSP-heavy approach that is intentionally deferred for v7 baseline.
 
+- `M-Game Clean Audio v8.0-transport-first.user.js`
+  - Archived versioned snapshot of the transport-first baseline.
+  - Current stable import path remains `scripts/current/M-Game Clean Audio.user.js`.
+
 - `-New userscript-.user.js`
   - Intermediate local iteration copy.
 
 ## Current line
 
-- `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- `scripts/current/M-Game Clean Audio.user.js`
   - Re-based on 1.4 principles.
   - Focuses on capture integrity and diagnostics first.
   - Defers advanced DSP and auto-mode until baseline acceptance.

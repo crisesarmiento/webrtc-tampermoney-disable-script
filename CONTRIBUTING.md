@@ -27,12 +27,17 @@ Strict enforcement toggle:
 - Repo variable `STRICT_LINEAR_ENFORCEMENT` controls strict validation.
 - Default behavior is strict (`true`).
 
+## Current script naming policy
+
+- Keep a stable import path in `scripts/current/` as `M-Game Clean Audio.user.js` (no version suffix).
+- When releasing a new version, archive the previous versioned artifact under `scripts/legacy/` and ensure docs/checks still reference the stable current path.
+
 ## Local checks before PR
 
 Run:
 
 ```bash
-node --check "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+node --check "scripts/current/M-Game Clean Audio.user.js"
 bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav"
 ```
 
