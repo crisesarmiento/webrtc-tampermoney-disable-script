@@ -4,14 +4,14 @@
 
 Use the script file:
 
-- `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- `scripts/current/M-Game Clean Audio.user.js`
 
 ### Option A: Import via Tampermonkey UI (recommended)
 
 1. Open Tampermonkey dashboard in Atlas browser.
 2. Click `Utilities` -> `Import from file`.
 3. Select:
-   - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+   - `scripts/current/M-Game Clean Audio.user.js`
 4. Save and ensure script is **Enabled**.
 
 ### Option B: Paste script manually

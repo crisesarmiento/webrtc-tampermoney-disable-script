@@ -40,3 +40,10 @@ Rules:
 - Primary AI reviewer source: Codex GitHub app integration (OAuth).
 - Keep CodeRabbit disabled for this repository to reduce noise.
 - Do not add `openai/codex-action` workflows unless the team explicitly adopts API-key-based CI reviews.
+
+## Current Script Naming Policy
+
+- Keep the active userscript path stable as `scripts/current/M-Game Clean Audio.user.js` (no version suffix in `current`).
+- Archive versioned release snapshots in `scripts/legacy/` (for example `M-Game Clean Audio v8.0-transport-first.user.js`).
+- When this policy changes, update hardcoded references across docs and checks (for example `README.md`, `INSTALL.md`, and `CONTRIBUTING.md`).
+
