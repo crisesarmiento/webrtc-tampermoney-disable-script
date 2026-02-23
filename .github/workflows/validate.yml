@@ -26,7 +26,7 @@ jobs:
 
       - name: Verify required project files
         run: |
-          test -f "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+          test -f "scripts/current/M-Game Clean Audio.user.js"
           test -f "scripts/tools/analyze_capture_metrics.sh"
           test -f "INSTALL.md"
           test -f "README.md"
