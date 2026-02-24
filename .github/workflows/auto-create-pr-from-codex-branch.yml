@@ -1,0 +1,83 @@
+name: Auto Create PR From Codex Branch
+
+on:
+  push:
+    branches:
+      - codex/**
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create PR when missing
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            const match = branch.match(/^codex\/(CE-\d+)-([a-z0-9][a-z0-9._-]*)$/);
+            if (!match) {
+              core.notice(`Skipping non-conforming branch: ${branch}`);
+              return;
+            }
+
+            const linearId = match[1];
+            const slug = match[2];
+            const base = 'development';
+            const head = `${context.repo.owner}:${branch}`;
+
+            const existing = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head,
+              base,
+              per_page: 1,
+            });
+
+            if (existing.data.length > 0) {
+              core.notice(`Open PR already exists for ${branch}: #${existing.data[0].number}`);
+              return;
+            }
+
+            const shortTitle = slug
+              .replace(/[._-]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .replace(/^./, (c) => c.toUpperCase());
+
+            const title = `[${linearId}] ${shortTitle}`;
+            const body = [
+              '## Summary',
+              `Auto-created from branch push \`${branch}\`.`,
+              '',
+              '## Linear Issue',
+              `- Linear ID: \`${linearId}\``,
+              '- Branch format: `codex/CE-<number>-<slug>`',
+              '- PR title format: `[CE-<number>] <short title>`',
+              '- Optional magic word example: `Closes CE-<number>`',
+              '',
+              `Closes ${linearId}`,
+            ].join('\n');
+
+            try {
+              const created = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: branch,
+                base,
+                title,
+                body,
+                draft: true,
+              });
+              core.notice(`Created PR #${created.data.number} for ${branch}`);
+            } catch (error) {
+              if (error?.status === 403 && /not permitted to create or approve pull requests/i.test(error?.message || '')) {
+                core.notice('Repository policy blocks GitHub Actions from creating PRs; skipping auto-create.');
+                return;
+              }
+              throw error;
+            }

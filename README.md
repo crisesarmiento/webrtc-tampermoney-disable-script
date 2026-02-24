@@ -11,6 +11,7 @@ This repository tracks two active tracks:
 
 - Current scripts:
   - `scripts/current/M-Game Clean Audio.user.js`
+  - `scripts/current/WebRTC Strict Blocker.user.js`
   - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
@@ -40,8 +41,9 @@ mgameStatus()
 
 For full install and live test flow, use `INSTALL.md`.
 
-For v9 standalone blocker validation, use:
+For strict-blocker install and validation flow, use:
 
+- `docs/setup/webrtc-strict-blocker-install.md`
 - `docs/validation/v9-strict-blocker-validation.md`
 
 For Linear/GitHub/Codex automation setup, use:
@@ -122,6 +124,10 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 - `v8.1` (released): gated hardening promoted from `development` to `master` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
+
+For v9 strict-blocker release planning, see:
+
+- `docs/changelog/v9-roadmap.md`
 
 ## Project Context Images
 

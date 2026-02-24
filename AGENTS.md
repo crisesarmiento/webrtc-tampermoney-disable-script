@@ -23,6 +23,8 @@ Strict toggle:
 - Treat `LINEAR_API_KEY`, `LINEAR_TEAM_ID`, and `LINEAR_PROJECT_ID` as secrets only.
 - Never commit raw Linear team/project IDs, private management identifiers, or internal-only issue URLs to tracked files.
 - Use sanitized placeholders (for example: `<LINEAR_ISSUE_URL>`) in docs, examples, and logs.
+- Keep operational identifiers in GitHub Secrets and local runtime configuration only.
+- Keep `STRICT_LINEAR_ENFORCEMENT` configured in repository settings as needed, without storing private IDs in tracked files.
 
 ## PR Review Output Contract
 
@@ -52,4 +54,3 @@ Rules:
 - Keep the active userscript path stable as `scripts/current/M-Game Clean Audio.user.js` (no version suffix in `current`).
 - Archive versioned release snapshots in `scripts/legacy/` (for example `M-Game Clean Audio v8.0-transport-first.user.js`).
 - When this policy changes, update hardcoded references across docs and checks (for example `README.md`, `INSTALL.md`, and `CONTRIBUTING.md`).
-
