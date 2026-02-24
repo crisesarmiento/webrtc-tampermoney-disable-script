@@ -63,14 +63,21 @@ jobs:
               `Closes ${linearId}`,
             ].join('\n');
 
-            const created = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: branch,
-              base,
-              title,
-              body,
-              draft: true,
-            });
-
-            core.notice(`Created PR #${created.data.number} for ${branch}`);
+            try {
+              const created = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: branch,
+                base,
+                title,
+                body,
+                draft: true,
+              });
+              core.notice(`Created PR #${created.data.number} for ${branch}`);
+            } catch (error) {
+              if (error?.status === 403 && /not permitted to create or approve pull requests/i.test(error?.message || '')) {
+                core.notice('Repository policy blocks GitHub Actions from creating PRs; skipping auto-create.');
+                return;
+              }
+              throw error;
+            }

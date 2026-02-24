@@ -41,16 +41,14 @@ jobs:
           ISSUE_URL="$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")"
 
           LINEAR_TITLE="[GH#${ISSUE_NUMBER}] ${ISSUE_TITLE}"
-          LINEAR_DESCRIPTION="$(cat <<EOF
-GitHub source: ${ISSUE_URL}
-
-Repository: ${GITHUB_REPOSITORY}
-Created from GitHub issue automation.
-
-Original issue body:
-${ISSUE_BODY}
-EOF
-)"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "GitHub source: ${ISSUE_URL}" \
+            "" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "Created from GitHub issue automation." \
+            "" \
+            "Original issue body:" \
+            "${ISSUE_BODY}")"
 
           GRAPHQL_PAYLOAD="$(jq -n \
             --arg teamId "$LINEAR_TEAM_ID" \
