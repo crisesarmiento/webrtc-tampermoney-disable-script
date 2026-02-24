@@ -2,21 +2,17 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository is now tracking the `v8.1` release baseline: **music transport integrity first, with gated hardening landed**.
+This repository tracks two active tracks:
 
-It also includes a separate `v9.0` minimum WebRTC strict-blocker track for selected domains (`chatgpt.com`, `x.com`, `twitter.com`).
-
-- Transport-first baseline (Opus music SDP guard + sender hints)
-- Strict stereo gate diagnostics
-- One-command `v5.2` compatibility fallback profile
-- Reproducible audio evidence workflow
+- `v8.x` transport-first music stability for Atlas/X Spaces.
+- `v9.0` standalone strict WebRTC processing blocker.
 
 ## What Is Included
 
-- Current script:
+- Current scripts:
   - `scripts/current/M-Game Clean Audio.user.js`
-- Separate strict WebRTC blocker script:
   - `scripts/current/WebRTC Strict Blocker.user.js`
+  - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
@@ -30,9 +26,9 @@ It also includes a separate `v9.0` minimum WebRTC strict-blocker track for selec
 
 ## Quick Start
 
-1. Import `scripts/current/M-Game Clean Audio.user.js` into Tampermonkey.
-2. Enable the script and reload Atlas/X tab.
-3. In Atlas, select mic input:
+1. Import one of the current scripts into Tampermonkey.
+2. Enable the script and reload the target tab.
+3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`
 4. Open DevTools Console and verify:
 
@@ -42,9 +38,14 @@ mgameStatus()
 
 For full install and live test flow, use `INSTALL.md`.
 
-For the standalone strict WebRTC blocker install and test flow, use:
+For strict-blocker install and validation flow, use:
 
 - `docs/setup/webrtc-strict-blocker-install.md`
+- `docs/validation/v9-strict-blocker-validation.md`
+
+For Linear/GitHub/Codex automation setup, use:
+
+- `docs/setup/linear-github-codex-automation.md`
 
 ## Workflow
 

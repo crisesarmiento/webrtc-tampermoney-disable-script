@@ -1,0 +1,121 @@
+name: Sync PR State To Linear
+
+on:
+  pull_request:
+    branches: [development]
+    types: [opened, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  sync-in-review:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.draft == false && startsWith(github.event.pull_request.head.ref, 'codex/CE-') }}
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Validate configuration
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "Missing required secret: LINEAR_API_KEY"
+            exit 1
+          fi
+          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
+            echo "Missing required secret: LINEAR_TEAM_ID"
+            exit 1
+          fi
+
+      - name: Resolve Linear identifier from PR
+        id: linear
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$PR_HEAD_REF" =~ ^codex/(CE-[0-9]+)-[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "PR head branch does not match codex/CE-<number>-<slug>."
+            exit 1
+          fi
+          BRANCH_LINEAR_ID="${BASH_REMATCH[1]}"
+
+          if [[ "$PR_TITLE" =~ ^\[(CE-[0-9]+)\][[:space:]]+.+$ ]]; then
+            TITLE_LINEAR_ID="${BASH_REMATCH[1]}"
+            if [ "$TITLE_LINEAR_ID" != "$BRANCH_LINEAR_ID" ]; then
+              echo "Linear ID mismatch between branch and PR title."
+              echo "Branch ID: $BRANCH_LINEAR_ID"
+              echo "Title ID:  $TITLE_LINEAR_ID"
+              exit 1
+            fi
+          fi
+
+          echo "identifier=${BRANCH_LINEAR_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Move Linear issue to In Review
+        env:
+          LINEAR_IDENTIFIER: ${{ steps.linear.outputs.identifier }}
+        run: |
+          set -euo pipefail
+
+          LOOKUP_PAYLOAD="$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            --arg identifier "$LINEAR_IDENTIFIER" \
+            '{
+              query: "query($teamId:String!, $identifier:String!){ team(id:$teamId){ states{nodes{id name type}} } issues(first:1, filter:{ identifier: { eq: $identifier } }) { nodes { id identifier state { id name type } } } }",
+              variables: { teamId: $teamId, identifier: $identifier }
+            }'
+          )"
+
+          LOOKUP_RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$LOOKUP_PAYLOAD")"
+
+          ISSUE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].id // ""')"
+          CURRENT_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].state.id // ""')"
+          IN_REVIEW_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "in review") | .id' | head -n 1)"
+          if [ -z "$IN_REVIEW_STATE_ID" ]; then
+            IN_REVIEW_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type == "started" and ((.name | ascii_downcase) | test("review"))) | .id' | head -n 1)"
+          fi
+
+          if [ -z "$ISSUE_ID" ]; then
+            echo "No Linear issue found for ${LINEAR_IDENTIFIER}."
+            echo "$LOOKUP_RESPONSE"
+            exit 1
+          fi
+          if [ -z "$IN_REVIEW_STATE_ID" ]; then
+            echo "Could not resolve In Review state for team ${LINEAR_TEAM_ID}."
+            echo "$LOOKUP_RESPONSE"
+            exit 1
+          fi
+          if [ "$CURRENT_STATE_ID" = "$IN_REVIEW_STATE_ID" ]; then
+            echo "Linear issue ${LINEAR_IDENTIFIER} is already In Review."
+            exit 0
+          fi
+
+          UPDATE_PAYLOAD="$(jq -n \
+            --arg issueId "$ISSUE_ID" \
+            --arg stateId "$IN_REVIEW_STATE_ID" \
+            '{
+              query: "mutation($issueId:String!, $input: IssueUpdateInput!){ issueUpdate(id:$issueId, input:$input){ success issue { identifier state { name type } } } }",
+              variables: { issueId: $issueId, input: { stateId: $stateId } }
+            }'
+          )"
+
+          UPDATE_RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$UPDATE_PAYLOAD")"
+
+          SUCCESS="$(printf '%s' "$UPDATE_RESPONSE" | jq -r '.data.issueUpdate.success // false')"
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Linear issueUpdate failed:"
+            echo "$UPDATE_RESPONSE"
+            exit 1
+          fi
+
+          UPDATED_STATE="$(printf '%s' "$UPDATE_RESPONSE" | jq -r '.data.issueUpdate.issue.state.name // "unknown"')"
+          echo "Linear issue ${LINEAR_IDENTIFIER} moved to ${UPDATED_STATE}."

@@ -29,7 +29,94 @@ permissions:
 jobs:
   trigger:
     runs-on: ubuntu-latest
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
     steps:
+      - name: Move Linear issue to In Progress
+        if: ${{ env.LINEAR_API_KEY != '' && env.LINEAR_TEAM_ID != '' }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_LINEAR_ISSUE_IDENTIFIER: ${{ inputs.linear_issue_identifier }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
+            LINEAR_IDENTIFIER="$(jq -r '.client_payload.linearIssueIdentifier // .client_payload.linear_issue_identifier // ""' "$GITHUB_EVENT_PATH")"
+          else
+            LINEAR_IDENTIFIER="${INPUT_LINEAR_ISSUE_IDENTIFIER}"
+          fi
+
+          if [ -z "$LINEAR_IDENTIFIER" ] || [ "$LINEAR_IDENTIFIER" = "null" ]; then
+            echo "No Linear issue identifier supplied. Skipping state sync."
+            exit 0
+          fi
+
+          LOOKUP_PAYLOAD="$(jq -n \
+            --arg teamId "$LINEAR_TEAM_ID" \
+            --arg identifier "$LINEAR_IDENTIFIER" \
+            '{
+              query: "query($teamId:String!, $identifier:String!){ team(id:$teamId){ states{nodes{id name type}} } issues(first:1, filter:{ identifier: { eq: $identifier } }) { nodes { id identifier state { id name type } } } }",
+              variables: { teamId: $teamId, identifier: $identifier }
+            }'
+          )"
+
+          LOOKUP_RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$LOOKUP_PAYLOAD")"
+
+          ISSUE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].id // ""')"
+          CURRENT_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].state.id // ""')"
+          IN_PROGRESS_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "in progress") | .id' | head -n 1)"
+          if [ -z "$IN_PROGRESS_STATE_ID" ]; then
+            IN_PROGRESS_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type == "started") | .id' | head -n 1)"
+          fi
+
+          if [ -z "$ISSUE_ID" ]; then
+            echo "No Linear issue found for ${LINEAR_IDENTIFIER}."
+            echo "$LOOKUP_RESPONSE"
+            exit 1
+          fi
+          if [ -z "$IN_PROGRESS_STATE_ID" ]; then
+            echo "Could not resolve In Progress/started state for team ${LINEAR_TEAM_ID}."
+            echo "$LOOKUP_RESPONSE"
+            exit 1
+          fi
+          if [ "$CURRENT_STATE_ID" = "$IN_PROGRESS_STATE_ID" ]; then
+            echo "Linear issue ${LINEAR_IDENTIFIER} is already In Progress."
+            exit 0
+          fi
+
+          UPDATE_PAYLOAD="$(jq -n \
+            --arg issueId "$ISSUE_ID" \
+            --arg stateId "$IN_PROGRESS_STATE_ID" \
+            '{
+              query: "mutation($issueId:String!, $input: IssueUpdateInput!){ issueUpdate(id:$issueId, input:$input){ success issue { identifier state { name type } } } }",
+              variables: { issueId: $issueId, input: { stateId: $stateId } }
+            }'
+          )"
+
+          UPDATE_RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$UPDATE_PAYLOAD")"
+
+          SUCCESS="$(printf '%s' "$UPDATE_RESPONSE" | jq -r '.data.issueUpdate.success // false')"
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Linear issueUpdate failed:"
+            echo "$UPDATE_RESPONSE"
+            exit 1
+          fi
+
+          UPDATED_STATE="$(printf '%s' "$UPDATE_RESPONSE" | jq -r '.data.issueUpdate.issue.state.name // "unknown"')"
+          echo "Linear issue ${LINEAR_IDENTIFIER} moved to ${UPDATED_STATE}."
+
+      - name: Linear state sync not configured
+        if: ${{ env.LINEAR_API_KEY == '' || env.LINEAR_TEAM_ID == '' }}
+        run: |
+          echo "LINEAR_API_KEY or LINEAR_TEAM_ID is missing. Skipping In Progress sync."
+
       - name: Handle assignment dispatch
         uses: actions/github-script@v7
         with:
