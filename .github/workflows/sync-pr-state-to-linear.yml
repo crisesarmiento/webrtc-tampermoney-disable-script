@@ -64,7 +64,7 @@ jobs:
             --arg teamId "$LINEAR_TEAM_ID" \
             --arg identifier "$LINEAR_IDENTIFIER" \
             '{
-              query: "query($teamId:String!, $identifier:String!){ team(id:$teamId){ states{nodes{id name type}} } issues(first:1, filter:{ identifier: { eq: $identifier } }) { nodes { id identifier state { id name type } } } }",
+              query: "query($teamId:String!, $identifier:String!){ team(id:$teamId){ states{nodes{id name type}} } issue(id:$identifier){ id identifier state { id name type } } }",
               variables: { teamId: $teamId, identifier: $identifier }
             }'
           )"
@@ -74,8 +74,8 @@ jobs:
             -H "Authorization: ${LINEAR_API_KEY}" \
             --data-binary "$LOOKUP_PAYLOAD")"
 
-          ISSUE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].id // ""')"
-          CURRENT_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issues.nodes[0].state.id // ""')"
+          ISSUE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issue.id // ""')"
+          CURRENT_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.issue.state.id // ""')"
           IN_REVIEW_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "in review") | .id' | head -n 1)"
           if [ -z "$IN_REVIEW_STATE_ID" ]; then
             IN_REVIEW_STATE_ID="$(printf '%s' "$LOOKUP_RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type == "started" and ((.name | ascii_downcase) | test("review"))) | .id' | head -n 1)"
