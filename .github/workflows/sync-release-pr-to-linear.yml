@@ -60,10 +60,10 @@ jobs:
             "PR body:" \
             "${PR_BODY}")"
 
-          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "linear_title=${LINEAR_TITLE}" >> "$GITHUB_OUTPUT"
           DELIMITER="EOF_$(date +%s)_$RANDOM"
           {
+            echo "pr_number=${PR_NUMBER}"
+            echo "linear_title=${LINEAR_TITLE}"
             echo "linear_description<<${DELIMITER}"
             echo "${LINEAR_DESCRIPTION}"
             echo "${DELIMITER}"
@@ -182,10 +182,12 @@ jobs:
             ACTION="created"
           fi
 
-          echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
-          echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
-          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
-          echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+          {
+            echo "action=${ACTION}"
+            echo "linear_id=${LINEAR_ID}"
+            echo "linear_identifier=${LINEAR_IDENTIFIER}"
+            echo "linear_url=${LINEAR_URL}"
+          } >> "$GITHUB_OUTPUT"
           source scripts/tools/linear_sync_lib.sh
           linear_emit_summary "$LINEAR_IDENTIFIER" "$ACTION"
 

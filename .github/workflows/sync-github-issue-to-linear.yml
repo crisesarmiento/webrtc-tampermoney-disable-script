@@ -79,9 +79,11 @@ jobs:
           LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.identifier')"
           LINEAR_URL="$(printf '%s' "$RESPONSE" | jq -r '.data.issueCreate.issue.url')"
 
-          echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
-          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
-          echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+          {
+            echo "linear_id=${LINEAR_ID}"
+            echo "linear_identifier=${LINEAR_IDENTIFIER}"
+            echo "linear_url=${LINEAR_URL}"
+          } >> "$GITHUB_OUTPUT"
           source scripts/tools/linear_sync_lib.sh
           linear_emit_summary "$LINEAR_IDENTIFIER" "created"
 
