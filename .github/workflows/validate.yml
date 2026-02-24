@@ -29,6 +29,15 @@ jobs:
           set -euo pipefail
           curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o /tmp/download-actionlint.bash
           bash /tmp/download-actionlint.bash latest
+          mkdir -p "${PWD}/bin"
+          if [ -x "${PWD}/actionlint" ]; then
+            mv "${PWD}/actionlint" "${PWD}/bin/actionlint"
+          fi
+          if [ ! -x "${PWD}/bin/actionlint" ]; then
+            echo "actionlint binary not found after installation."
+            ls -la "${PWD}"
+            exit 1
+          fi
           echo "${PWD}/bin" >> "$GITHUB_PATH"
           "${PWD}/bin/actionlint" -version
 
