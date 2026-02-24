@@ -1,0 +1,151 @@
+name: Sync CE PR Merge To Linear Done
+
+on:
+  pull_request:
+    branches: [development]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      ce_identifier:
+        description: "Linear CE identifier (example: CE-298)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sync-ce-pr-merge:
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'development' && startsWith(github.event.pull_request.head.ref, 'codex/CE-')) || github.event_name == 'workflow_dispatch' }}
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      INPUT_CE_IDENTIFIER: ${{ inputs.ce_identifier }}
+    steps:
+      - name: Validate configuration
+        run: |
+          if [ -z "${LINEAR_API_KEY:-}" ]; then
+            echo "Missing required secret: LINEAR_API_KEY"
+            exit 1
+          fi
+
+      - name: Resolve CE identifier
+        id: ce
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          CE_IDENTIFIER=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            CE_IDENTIFIER="$INPUT_CE_IDENTIFIER"
+          else
+            CE_IDENTIFIER="$(printf '%s\n%s\n%s\n' "$PR_TITLE" "$PR_BODY" "$PR_HEAD_REF" | grep -Eo 'CE-[0-9]+' | head -n 1 || true)"
+          fi
+
+          CE_IDENTIFIER="$(printf '%s' "${CE_IDENTIFIER:-}" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')"
+          if ! printf '%s' "$CE_IDENTIFIER" | grep -Eq '^CE-[0-9]+$'; then
+            echo "No valid CE identifier found; skipping Linear sync."
+            CE_IDENTIFIER=""
+          fi
+
+          echo "ce_identifier=${CE_IDENTIFIER}" >> "$GITHUB_OUTPUT"
+
+      - name: Skip when no CE identifier is present
+        if: ${{ steps.ce.outputs.ce_identifier == '' }}
+        run: echo "No CE identifier detected for this merge; nothing to sync."
+
+      - name: Resolve Linear issue and completed state
+        if: ${{ steps.ce.outputs.ce_identifier != '' }}
+        id: linear
+        env:
+          CE_IDENTIFIER: ${{ steps.ce.outputs.ce_identifier }}
+        run: |
+          QUERY_PAYLOAD="$(jq -n \
+            --arg identifier "$CE_IDENTIFIER" \
+            '{
+              query: "query($identifier:String!){ issue(id:$identifier){ id identifier state { id type name } team { id states { nodes { id name type } } } } }",
+              variables: {
+                identifier: $identifier
+              }
+            }'
+          )"
+
+          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$QUERY_PAYLOAD")"
+
+          GRAPHQL_ERRORS="$(printf '%s' "$RESPONSE" | jq -c '.errors // empty')"
+          if [ -n "$GRAPHQL_ERRORS" ] && [ "$GRAPHQL_ERRORS" != "null" ]; then
+            echo "Linear issue lookup failed:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          LINEAR_ISSUE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.issue.id // empty')"
+          LINEAR_IDENTIFIER="$(printf '%s' "$RESPONSE" | jq -r '.data.issue.identifier // empty')"
+          CURRENT_STATE_TYPE="$(printf '%s' "$RESPONSE" | jq -r '.data.issue.state.type // empty')"
+          DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.issue.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
+
+          if [ -z "$LINEAR_ISSUE_ID" ] || [ -z "$LINEAR_IDENTIFIER" ]; then
+            echo "Could not find Linear issue for identifier ${CE_IDENTIFIER}."
+            echo "$RESPONSE"
+            exit 1
+          fi
+          if [ -z "$DONE_STATE_ID" ] || [ "$DONE_STATE_ID" = "null" ]; then
+            echo "Could not resolve completed state for ${LINEAR_IDENTIFIER}."
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          ALREADY_DONE="false"
+          if [ "$CURRENT_STATE_TYPE" = "completed" ]; then
+            ALREADY_DONE="true"
+          fi
+
+          echo "linear_issue_id=${LINEAR_ISSUE_ID}" >> "$GITHUB_OUTPUT"
+          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
+          echo "done_state_id=${DONE_STATE_ID}" >> "$GITHUB_OUTPUT"
+          echo "already_done=${ALREADY_DONE}" >> "$GITHUB_OUTPUT"
+
+      - name: Mark Linear issue as Done
+        if: ${{ steps.ce.outputs.ce_identifier != '' && steps.linear.outputs.already_done != 'true' }}
+        env:
+          LINEAR_ISSUE_ID: ${{ steps.linear.outputs.linear_issue_id }}
+          DONE_STATE_ID: ${{ steps.linear.outputs.done_state_id }}
+          LINEAR_IDENTIFIER: ${{ steps.linear.outputs.linear_identifier }}
+        run: |
+          MUTATION_PAYLOAD="$(jq -n \
+            --arg issueId "$LINEAR_ISSUE_ID" \
+            --arg stateId "$DONE_STATE_ID" \
+            '{
+              query: "mutation($id:String!, $input: IssueUpdateInput!){ issueUpdate(id:$id,input:$input){ success issue { id identifier state { id name type } } } }",
+              variables: {
+                id: $issueId,
+                input: {
+                  stateId: $stateId
+                }
+              }
+            }'
+          )"
+
+          RESPONSE="$(curl -sS -X POST "https://api.linear.app/graphql" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: ${LINEAR_API_KEY}" \
+            --data-binary "$MUTATION_PAYLOAD")"
+
+          SUCCESS="$(printf '%s' "$RESPONSE" | jq -r '.data.issueUpdate.success // false')"
+          if [ "$SUCCESS" != "true" ]; then
+            echo "Linear issueUpdate failed while completing ${LINEAR_IDENTIFIER}:"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          echo "Marked ${LINEAR_IDENTIFIER} as Done."
+
+      - name: Report no-op when already done
+        if: ${{ steps.ce.outputs.ce_identifier != '' && steps.linear.outputs.already_done == 'true' }}
+        run: echo "${{ steps.linear.outputs.linear_identifier }} is already in a completed state."
