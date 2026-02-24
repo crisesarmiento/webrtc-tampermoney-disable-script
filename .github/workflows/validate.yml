@@ -22,7 +22,15 @@ jobs:
       - name: Install CLI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg ripgrep
+          sudo apt-get install -y ffmpeg ripgrep shellcheck
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o /tmp/download-actionlint.bash
+          bash /tmp/download-actionlint.bash latest
+          echo "${PWD}/bin" >> "$GITHUB_PATH"
+          "${PWD}/bin/actionlint" -version
 
       - name: Verify required project files
         run: |
@@ -51,3 +59,19 @@ jobs:
           fi
           bash "scripts/tools/analyze_capture_metrics.sh" "$SAMPLE_WAV" > /tmp/audio-metrics.txt
           rg -n "input_i|input_tp|mean_volume|max_volume|L-R residual" /tmp/audio-metrics.txt
+
+
+      - name: Workflow lint checks
+        run: |
+          actionlint
+
+      - name: Shell strict-mode checks
+        run: |
+          bash -n "scripts/tools/analyze_capture_metrics.sh"
+          bash -n "scripts/tools/linear_sync_lib.sh"
+          bash -n "scripts/tools/test_require_linked_issue_contract.sh"
+          shellcheck scripts/tools/linear_sync_lib.sh scripts/tools/test_require_linked_issue_contract.sh
+
+      - name: PR payload smoke tests
+        run: |
+          bash scripts/tools/test_require_linked_issue_contract.sh

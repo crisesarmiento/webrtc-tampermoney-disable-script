@@ -28,20 +28,14 @@ jobs:
       LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
       LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate configuration
         run: |
-          if [ -z "${LINEAR_API_KEY:-}" ]; then
-            echo "Missing required secret: LINEAR_API_KEY"
-            exit 1
-          fi
-          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
-            echo "Missing required secret: LINEAR_TEAM_ID"
-            exit 1
-          fi
-          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-            echo "Missing required secret: LINEAR_PROJECT_ID"
-            exit 1
-          fi
+          set -euo pipefail
+          source scripts/tools/linear_sync_lib.sh
+          linear_require_env
 
       - name: Load release PR context
         id: pr
@@ -342,6 +336,8 @@ jobs:
           echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
           echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
           echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+          source scripts/tools/linear_sync_lib.sh
+          linear_emit_summary "$LINEAR_IDENTIFIER" "$ACTION"
 
       - name: Close Linear release PR issue
         id: linear_release_close
