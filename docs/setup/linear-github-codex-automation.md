@@ -8,16 +8,38 @@ This setup provides:
 4. Strict Linear branch/title enforcement for normal work PRs.
 5. One AI reviewer source: Codex GitHub integration (OAuth).
 
+## 0) Recommended Codex + Linear MCP configuration
+
+Use the Linear MCP streamable HTTP endpoint with bearer token env var:
+
+```bash
+codex mcp remove linear
+codex mcp add linear --url https://mcp.linear.app/mcp --bearer-token-env-var LINEAR_API_KEY
+codex mcp list
+codex mcp get linear
+```
+
+Expected:
+
+- `url: https://mcp.linear.app/mcp`
+- `bearer_token_env_var: LINEAR_API_KEY`
+- `status: enabled`
+
+Notes:
+
+- Prefer this `/mcp` endpoint for Codex MCP connectivity.
+- Keep the Linear API key in environment/secrets only; do not commit keys to repo files.
+
 ## 1) Configure repository secrets and variables
 
 In GitHub repository settings, add:
 
 - Secret: `LINEAR_API_KEY`
   - Linear API key (raw key format, not `Bearer`).
-- Variable: `LINEAR_TEAM_ID`
-  - Team ID for `CE`.
-- Variable: `LINEAR_PROJECT_ID`
-  - Project ID for this repository.
+- Secret: `LINEAR_TEAM_ID`
+  - Team ID for the target Linear team.
+- Secret: `LINEAR_PROJECT_ID`
+  - Project ID for the target Linear project.
 - Variable: `STRICT_LINEAR_ENFORCEMENT`
   - Optional toggle for `.github/workflows/require-linked-issue.yml`.
   - Default/recommended: `true`.
@@ -92,10 +114,10 @@ curl -X POST \
   -d '{
     "event_type": "linear_issue_assigned_to_codex",
     "client_payload": {
-      "linearIssueIdentifier": "CE-224",
-      "linearIssueUrl": "https://linear.app/cris-emi/issue/CE-224/...",
+      "linearIssueIdentifier": "<ISSUE_IDENTIFIER>",
+      "linearIssueUrl": "https://linear.app/<workspace>/issue/<ISSUE_IDENTIFIER>/...",
       "githubIssueNumber": 6,
-      "title": "Codex task trigger: CE-224"
+      "title": "Codex task trigger: <ISSUE_IDENTIFIER>"
     }
   }'
 ```

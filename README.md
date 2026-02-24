@@ -4,6 +4,8 @@ Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with t
 
 This repository is now tracking the `v8.1` release baseline: **music transport integrity first, with gated hardening landed**.
 
+It also includes a separate `v9.0` minimum WebRTC strict-blocker track for selected domains (`chatgpt.com`, `x.com`, `twitter.com`).
+
 - Transport-first baseline (Opus music SDP guard + sender hints)
 - Strict stereo gate diagnostics
 - One-command `v5.2` compatibility fallback profile
@@ -13,13 +15,14 @@ This repository is now tracking the `v8.1` release baseline: **music transport i
 
 - Current script:
   - `scripts/current/M-Game Clean Audio.user.js`
+- Separate strict WebRTC blocker script:
+  - `scripts/current/WebRTC Strict Blocker.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
   - `scripts/tools/analyze_capture_metrics.sh`
 - Setup, validation, and changelog docs:
   - `docs/`
-  - `docs/setup/linear-github-codex-automation.md`
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
@@ -39,9 +42,9 @@ mgameStatus()
 
 For full install and live test flow, use `INSTALL.md`.
 
-For Linear/GitHub/Codex automation setup, use:
+For the standalone strict WebRTC blocker install and test flow, use:
 
-- `docs/setup/linear-github-codex-automation.md`
+- `docs/setup/webrtc-strict-blocker-install.md`
 
 ## Workflow
 
@@ -117,6 +120,10 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 - `v8.1` (released): gated hardening promoted from `development` to `master` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
+
+For v9 strict-blocker release planning, see:
+
+- `docs/changelog/v9-roadmap.md`
 
 ## Project Context Images
 

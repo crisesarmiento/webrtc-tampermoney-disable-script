@@ -47,3 +47,12 @@ Rules:
 - Archive versioned release snapshots in `scripts/legacy/` (for example `M-Game Clean Audio v8.0-transport-first.user.js`).
 - When this policy changes, update hardcoded references across docs and checks (for example `README.md`, `INSTALL.md`, and `CONTRIBUTING.md`).
 
+## Private Operations Policy
+
+- Do not commit internal management metadata (tokens, team/project IDs, issue URLs, or private workflow mappings).
+- Keep operational identifiers in GitHub Secrets and local runtime configuration only.
+- For this repository, keep Linear operational values private via secrets:
+  - `LINEAR_API_KEY`
+  - `LINEAR_TEAM_ID`
+  - `LINEAR_PROJECT_ID`
+- Keep `STRICT_LINEAR_ENFORCEMENT` configured in repository settings as needed, without storing private IDs in tracked files.

@@ -1,5 +1,9 @@
 # Install and Live Test (Atlas + X Spaces)
 
+For the standalone v9 strict WebRTC blocker flow, use:
+
+- `docs/setup/webrtc-strict-blocker-install.md`
+
 ## 1) Install the v8.0 script in Tampermonkey
 
 Use the script file:
