@@ -8,16 +8,16 @@ This setup provides:
 4. Strict Linear branch/title enforcement for normal work PRs.
 5. One AI reviewer source: Codex GitHub integration (OAuth).
 
-## 1) Configure repository secrets and variables
+## 1) Configure repository secrets
 
 In GitHub repository settings, add:
 
 - Secret: `LINEAR_API_KEY`
   - Linear API key (raw key format, not `Bearer`).
-- Variable: `LINEAR_TEAM_ID`
-  - Team ID for `CE`.
-- Variable: `LINEAR_PROJECT_ID`
-  - Project ID for this repository.
+- Secret: `LINEAR_TEAM_ID`
+  - Team ID for `CE` (kept private).
+- Secret: `LINEAR_PROJECT_ID`
+  - Project ID for this repository (kept private).
 - Variable: `STRICT_LINEAR_ENFORCEMENT`
   - Optional toggle for `.github/workflows/require-linked-issue.yml`.
   - Default/recommended: `true`.
@@ -93,7 +93,7 @@ curl -X POST \
     "event_type": "linear_issue_assigned_to_codex",
     "client_payload": {
       "linearIssueIdentifier": "CE-224",
-      "linearIssueUrl": "https://linear.app/cris-emi/issue/CE-224/...",
+      "linearIssueUrl": "<LINEAR_ISSUE_URL>",
       "githubIssueNumber": 6,
       "title": "Codex task trigger: CE-224"
     }

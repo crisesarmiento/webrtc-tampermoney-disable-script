@@ -14,8 +14,8 @@ jobs:
     if: ${{ !github.event.issue.pull_request }}
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
-      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
+      LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+      LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
     steps:
       - name: Validate configuration
         run: |
@@ -24,11 +24,11 @@ jobs:
             exit 1
           fi
           if [ -z "${LINEAR_TEAM_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_TEAM_ID"
+            echo "Missing required secret: LINEAR_TEAM_ID"
             exit 1
           fi
           if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_PROJECT_ID"
+            echo "Missing required secret: LINEAR_PROJECT_ID"
             exit 1
           fi
 
@@ -41,16 +41,14 @@ jobs:
           ISSUE_URL="$(jq -r '.issue.html_url' "$GITHUB_EVENT_PATH")"
 
           LINEAR_TITLE="[GH#${ISSUE_NUMBER}] ${ISSUE_TITLE}"
-          LINEAR_DESCRIPTION="$(cat <<EOF
-GitHub source: ${ISSUE_URL}
-
-Repository: ${GITHUB_REPOSITORY}
-Created from GitHub issue automation.
-
-Original issue body:
-${ISSUE_BODY}
-EOF
-)"
+          LINEAR_DESCRIPTION="$(printf '%s\n' \
+            "GitHub source: ${ISSUE_URL}" \
+            "" \
+            "Repository: ${GITHUB_REPOSITORY}" \
+            "Created from GitHub issue automation." \
+            "" \
+            "Original issue body:" \
+            "${ISSUE_BODY}")"
 
           GRAPHQL_PAYLOAD="$(jq -n \
             --arg teamId "$LINEAR_TEAM_ID" \

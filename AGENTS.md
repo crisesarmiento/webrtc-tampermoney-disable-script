@@ -18,6 +18,12 @@ Strict toggle:
 
 - `STRICT_LINEAR_ENFORCEMENT=true` enables strict enforcement in `.github/workflows/require-linked-issue.yml`.
 
+## Private Operations Policy
+
+- Treat `LINEAR_API_KEY`, `LINEAR_TEAM_ID`, and `LINEAR_PROJECT_ID` as secrets only.
+- Never commit raw Linear team/project IDs, private management identifiers, or internal-only issue URLs to tracked files.
+- Use sanitized placeholders (for example: `<LINEAR_ISSUE_URL>`) in docs, examples, and logs.
+
 ## PR Review Output Contract
 
 When Codex posts PR reviews, use this exact heading order:

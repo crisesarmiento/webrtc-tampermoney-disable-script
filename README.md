@@ -2,17 +2,16 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository currently focuses on one priority for `v8.0`: **music transport integrity first**.
+This repository tracks two active tracks:
 
-- Transport-first baseline (Opus music SDP guard + sender hints)
-- Strict stereo gate diagnostics
-- One-command `v5.2` compatibility fallback profile
-- Reproducible audio evidence workflow
+- `v8.x` transport-first music stability for Atlas/X Spaces
+- `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
 
-- Current script:
+- Current scripts:
   - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+  - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
@@ -25,9 +24,11 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 
 ## Quick Start
 
-1. Import `scripts/current/M-Game Clean Audio v7.0-baseline.user.js` into Tampermonkey.
-2. Enable the script and reload Atlas/X tab.
-3. In Atlas, select mic input:
+1. Import one of the current scripts into Tampermonkey:
+   - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js` (transport-first Atlas/X path)
+   - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
+2. Enable the script and reload the target tab.
+3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`
 4. Open DevTools Console and verify:
 
@@ -36,6 +37,10 @@ mgameStatus()
 ```
 
 For full install and live test flow, use `INSTALL.md`.
+
+For v9 standalone blocker validation, use:
+
+- `docs/validation/v9-strict-blocker-validation.md`
 
 For Linear/GitHub/Codex automation setup, use:
 
