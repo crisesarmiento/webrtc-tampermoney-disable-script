@@ -4,8 +4,8 @@ Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with t
 
 This repository tracks two active tracks:
 
-- `v8.x` transport-first music stability for Atlas/X Spaces.
-- `v9.0` standalone strict WebRTC processing blocker.
+- `v8.x` transport-first music stability for Atlas/X Spaces
+- `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
 
@@ -19,6 +19,7 @@ This repository tracks two active tracks:
   - `scripts/tools/analyze_capture_metrics.sh`
 - Setup, validation, and changelog docs:
   - `docs/`
+  - `docs/setup/linear-github-codex-automation.md`
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
@@ -26,7 +27,9 @@ This repository tracks two active tracks:
 
 ## Quick Start
 
-1. Import one of the current scripts into Tampermonkey.
+1. Import one of the current scripts into Tampermonkey:
+   - `scripts/current/M-Game Clean Audio.user.js` (transport-first Atlas/X path)
+   - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
 2. Enable the script and reload the target tab.
 3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`

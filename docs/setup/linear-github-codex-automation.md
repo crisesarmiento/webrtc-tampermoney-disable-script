@@ -33,7 +33,7 @@ Notes:
 - Prefer this `/mcp` endpoint for Codex MCP connectivity.
 - Keep the Linear API key in environment/secrets only; do not commit keys to repo files.
 
-## 1) Configure repository secrets and variables
+## 1) Configure repository secrets
 
 In GitHub repository settings, add:
 
