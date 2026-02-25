@@ -59,6 +59,10 @@ Required for normal work PRs:
 - Title: `[CE-<number>] <short title>`
 - Branch ID and title ID must match.
 
+Compatibility bridge:
+
+- If Linear/Codex starts work from `ce-<number>-<slug>` or `feature/ce-<number>-<slug>`, automation normalizes it to `codex/CE-<number>-<slug>` and creates/updates the PR from the canonical branch.
+
 Optional:
 
 - Magic word in PR body/commit, for example: `Closes CE-123`
@@ -83,8 +87,9 @@ Release exemption:
   - Moves matching Linear issue (`CE-*`) to `In Review` for active review state tracking.
 
 - `.github/workflows/auto-create-pr-from-codex-branch.yml`
-  - Trigger: `push` to `codex/**` branches.
-  - Auto-creates a PR to `development` if one does not already exist.
+  - Trigger: `push` to `codex/**`, `ce-*`, and `feature/ce-*` branches.
+  - Canonicalizes compatible legacy branch names (`ce-*`, `feature/ce-*`) to `codex/CE-*` and keeps canonical branch refs updated to latest SHA.
+  - Auto-creates a PR to `development` from canonical `codex/CE-*` branch if one does not already exist.
 
 - `.github/workflows/sync-release-pr-to-linear.yml`
   - Trigger: `pull_request` to `master` when `head == development`.
