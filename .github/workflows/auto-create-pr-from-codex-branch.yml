@@ -16,6 +16,9 @@ permissions:
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    concurrency:
+      group: auto-create-pr-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Create PR when missing
         uses: actions/github-script@v7
@@ -25,6 +28,25 @@ jobs:
             const sourceSha = context.sha;
             const canonicalPattern = /^codex\/(CE-\d+)-([a-z0-9][a-z0-9._-]*)$/;
             const legacyPattern = /^(?:feature\/)?(ce-\d+)-(.+)$/i;
+
+            try {
+              const sourceRef = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${sourceBranch}`,
+              });
+              const liveSourceSha = sourceRef.data.object.sha;
+              if (liveSourceSha !== sourceSha) {
+                core.notice(`Skipping stale run for ${sourceBranch}: event SHA ${sourceSha} is behind live SHA ${liveSourceSha}`);
+                return;
+              }
+            } catch (error) {
+              if (error?.status === 404) {
+                core.notice(`Source branch no longer exists: ${sourceBranch}`);
+                return;
+              }
+              throw error;
+            }
 
             let branch = sourceBranch;
             let linearId = '';
