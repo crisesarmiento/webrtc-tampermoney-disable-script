@@ -10,13 +10,17 @@
 ## Mandatory Linear-first workflow
 
 1. Start from a Linear issue (`CE-<number>`).
-2. Create one branch from `development` using:
+2. Sync local `development` to the latest remote before creating your feature branch:
+   - `git checkout development`
+   - `git pull origin development`
+3. Create one branch from the updated `development` using:
    - `codex/CE-<number>-<slug>`
-3. Open PR to `development` with title:
+4. Open PR to `development` with title:
    - `[CE-<number>] <short title>`
-4. Optional in PR body or commit message:
+5. Keep your branch current with `development` while work is in progress (rebase or merge) so the PR reflects the latest integration branch state.
+6. Optional in PR body or commit message:
    - `Closes CE-<number>`
-5. Ensure branch ID and PR title ID are the same.
+7. Ensure branch ID and PR title ID are the same.
 
 Release PR rule:
 

@@ -43,10 +43,14 @@ For Linear/GitHub/Codex automation setup, use:
 
 ## Workflow
 
+- Always start by syncing `development` locally before new feature work:
+  - `git checkout development`
+  - `git pull origin development`
 - Branch format: `codex/CE-<number>-<slug>`
 - PR title format: `[CE-<number>] <short title>`
 - Optional magic word in PR body/commit: `Closes CE-<number>`
 - Keep the same `CE-<number>` in branch, title, and any magic-word line.
+- Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
 Example:
