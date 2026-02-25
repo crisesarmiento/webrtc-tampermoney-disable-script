@@ -142,3 +142,40 @@ curl -X POST \
     }
   }'
 ```
+
+
+## 7) Runbook and observability
+
+- Runbook: [`docs/setup/linear-sync-runbook.md`](./linear-sync-runbook.md)
+- Each Linear sync workflow emits structured status lines in this format:
+  - `linear_sync ce_id=<identifier> status=<updated|already_done|not_found|failed> reason=<optional>`
+- Use this output for audit, alerting, and manual replay triage.
+
+## 8) Workflow reliability controls
+
+- `validate.yml` enforces workflow quality checks via:
+  - `actionlint` (YAML + workflow linting)
+  - shell strict mode checks for helper scripts
+  - PR payload smoke tests for branch/title + CE linkage cases
+- Linear API error handling should classify failures into:
+  - `infra_api` (transient API/network failures, usually retriable)
+  - `not_found` (missing CE/issue mapping, usually no-op with warning)
+
+
+## 9) State machine ownership
+
+Linear state transitions are event-driven and idempotent:
+
+- `opened` PR event
+  - Owner: release/PR sync workflows
+  - Transition: `Todo/In Progress -> In Review` (no-op if already in review/done).
+- `ready_for_review` PR event
+  - Owner: release/PR sync workflows (future extension point; same transition contract).
+  - Transition: `Todo/In Progress -> In Review` (idempotent).
+- `merged` PR event
+  - Owner: `release-merge-create-tag.yml`
+  - Transition: `In Review -> Done` for linked release ticket (no-op when mapping missing).
+
+Failure handling:
+- `not_found` and missing-mapping paths are logged and treated as non-blocking no-op when safe.
+- API/infra failures fail the run and should be retried using the runbook.
