@@ -5,7 +5,7 @@ This document defines a reproducible test matrix for the strict WebRTC-blocking 
 ## Scope
 
 - Target domains under strict blocking policy:
-  - `https://chatgpt.com/atlas/*`
+  - `https://chatgpt.com/*`
   - `https://x.com/*`
   - `https://twitter.com/*`
 - Non-target control:
@@ -36,7 +36,7 @@ This document defines a reproducible test matrix for the strict WebRTC-blocking 
 
 | ID | Domain type | URL | Expected strict behavior | Observed result | Status | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| T1 | Target | `https://chatgpt.com/atlas/` | WebRTC creation paths are blocked before publish; no usable outbound media path is established. | `RTCPeerConnection`/capture-dependent publish path is blocked on load; Atlas cannot complete live publish init. | Pass | Blocking is active at target scope. |
+| T1 | Target | `https://chatgpt.com/atlas/` | WebRTC creation paths are blocked before publish; no usable outbound media path is established. | `RTCPeerConnection`/capture-dependent publish path is blocked on load; Atlas cannot complete live publish init. | Pass | ChatGPT scope is `https://chatgpt.com/*`; this run validated `/atlas/`. |
 | T2 | Target | `https://x.com/i/spaces` | Spaces live audio publish path is blocked under strict mode; media session cannot start normally. | Attempting to start/publish in Spaces fails to initialize live audio transport due to strict block hooks. | Pass | Matches strict behavior goal for X target. |
 | T3 | Target | `https://twitter.com/i/spaces` | Legacy Twitter host should receive same strict block behavior as `x.com`. | Same block behavior observed as `x.com`; publish path does not initialize. | Pass | Host alias parity validated. |
 | C1 | Non-target control | `https://meet.jit.si/` | Script should not apply strict block outside target list; native WebRTC behavior remains available. | Control site can proceed through normal device/WebRTC flow (subject to local permissions). | Pass | Confirms scope-limited blocking and avoids global breakage. |
