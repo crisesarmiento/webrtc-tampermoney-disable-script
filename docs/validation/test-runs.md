@@ -49,3 +49,7 @@ If strict mode fails, use immediate fallback and re-run:
 mgameProfile('compat_v52')
 await mgameGateCheck(500, 12000)
 ```
+
+## CE-296 strict blocking matrix
+
+- See `docs/validation/strict-blocking-matrix-ce-296.md` for target-domain and control-domain strict-block validation results.
