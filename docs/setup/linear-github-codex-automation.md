@@ -95,6 +95,12 @@ Release exemption:
   - Trigger B: manual `workflow_dispatch` with `pr_number` for backfill.
   - Extracts `v*` version from PR title/body, creates tag on merge commit, upserts Linear tag ticket, and closes the release PR Linear ticket to `Done`.
 
+- `.github/workflows/sync-ce-pr-merge-to-linear-done.yml`
+  - Trigger A: `pull_request.closed` for merged PRs into `development` when `head` starts with `codex/CE-`.
+  - Trigger B: manual `workflow_dispatch` for backfill.
+  - Extracts CE identifiers from PR title/body/head branch, normalizes and deduplicates all matches, then marks each matching Linear issue as `Done` (idempotent per issue).
+  - `workflow_dispatch` supports one or more identifiers via `ce_identifiers` (space/comma/newline separated), optionally combined with `pr_number`.
+
 - `.github/workflows/sync-release-tag-to-linear.yml`
   - Trigger: `push` tags matching `v*`.
   - Creates Linear release tracking ticket for manual/published tag push events.
