@@ -4,28 +4,116 @@ on:
   push:
     branches:
       - codex/**
+      - ce-*
+      - CE-*
+      - feature/ce-*
+      - feature/CE-*
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
 
 jobs:
   create-pr:
     runs-on: ubuntu-latest
+    concurrency:
+      group: auto-create-pr-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Create PR when missing
         uses: actions/github-script@v7
         with:
           script: |
-            const branch = context.ref.replace('refs/heads/', '');
-            const match = branch.match(/^codex\/(CE-\d+)-([a-z0-9][a-z0-9._-]*)$/);
-            if (!match) {
-              core.notice(`Skipping non-conforming branch: ${branch}`);
-              return;
+            const sourceBranch = context.ref.replace('refs/heads/', '');
+            const sourceSha = context.sha;
+            const canonicalPattern = /^codex\/(CE-\d+)-([a-z0-9][a-z0-9._-]*)$/;
+            const legacyPattern = /^(?:feature\/)?(ce-\d+)-(.+)$/i;
+
+            try {
+              const sourceRef = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${sourceBranch}`,
+              });
+              const liveSourceSha = sourceRef.data.object.sha;
+              if (liveSourceSha !== sourceSha) {
+                core.notice(`Skipping stale run for ${sourceBranch}: event SHA ${sourceSha} is behind live SHA ${liveSourceSha}`);
+                return;
+              }
+            } catch (error) {
+              if (error?.status === 404) {
+                core.notice(`Source branch no longer exists: ${sourceBranch}`);
+                return;
+              }
+              throw error;
             }
 
-            const linearId = match[1];
-            const slug = match[2];
+            let branch = sourceBranch;
+            let linearId = '';
+            let slug = '';
+            let normalizedFrom = '';
+
+            const canonicalMatch = sourceBranch.match(canonicalPattern);
+            if (canonicalMatch) {
+              linearId = canonicalMatch[1];
+              slug = canonicalMatch[2];
+            } else {
+              const legacyMatch = sourceBranch.match(legacyPattern);
+              if (!legacyMatch) {
+                core.notice(`Skipping non-conforming branch: ${sourceBranch}`);
+                return;
+              }
+
+              linearId = legacyMatch[1].toUpperCase();
+              slug = legacyMatch[2]
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+
+              if (!slug || !/^[a-z0-9][a-z0-9._-]*$/.test(slug)) {
+                core.notice(`Could not normalize branch slug from: ${sourceBranch}`);
+                return;
+              }
+
+              branch = `codex/${linearId}-${slug}`;
+              normalizedFrom = sourceBranch;
+              const refName = `heads/${branch}`;
+
+              try {
+                const existingRef = await github.rest.git.getRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: refName,
+                });
+
+                if (existingRef.data.object.sha !== sourceSha) {
+                  await github.rest.git.updateRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: refName,
+                    sha: sourceSha,
+                    force: true,
+                  });
+                  core.notice(`Updated canonical branch ${branch} -> ${sourceSha} from ${sourceBranch}`);
+                } else {
+                  core.notice(`Canonical branch ${branch} already up-to-date at ${sourceSha}`);
+                }
+              } catch (error) {
+                if (error?.status === 404) {
+                  await github.rest.git.createRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: `refs/heads/${branch}`,
+                    sha: sourceSha,
+                  });
+                  core.notice(`Created canonical branch ${branch} -> ${sourceSha} from ${sourceBranch}`);
+                } else {
+                  throw error;
+                }
+              }
+            }
+
             const base = 'development';
             const head = `${context.repo.owner}:${branch}`;
 
@@ -53,6 +141,7 @@ jobs:
             const body = [
               '## Summary',
               `Auto-created from branch push \`${branch}\`.`,
+              normalizedFrom ? `- Normalized from source branch \`${normalizedFrom}\`.` : null,
               '',
               '## Linear Issue',
               `- Linear ID: \`${linearId}\``,
@@ -61,7 +150,7 @@ jobs:
               '- Optional magic word example: `Closes CE-<number>`',
               '',
               `Closes ${linearId}`,
-            ].join('\n');
+            ].filter(Boolean).join('\n');
 
             try {
               const created = await github.rest.pulls.create({
