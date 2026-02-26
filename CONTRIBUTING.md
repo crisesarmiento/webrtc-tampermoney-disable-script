@@ -10,13 +10,17 @@
 ## Mandatory Linear-first workflow
 
 1. Start from a Linear issue (`CE-<number>`).
-2. Create one branch from `development` using:
+2. Sync local `development` to the latest remote before creating your feature branch:
+   - `git checkout development`
+   - `git pull origin development`
+3. Create one branch from the updated `development` using:
    - `codex/CE-<number>-<slug>`
-3. Open PR to `development` with title:
+4. Open PR to `development` with title:
    - `[CE-<number>] <short title>`
-4. Optional in PR body or commit message:
+5. Keep your branch current with `development` while work is in progress (rebase or merge) so the PR reflects the latest integration branch state.
+6. Optional in PR body or commit message:
    - `Closes CE-<number>`
-5. Ensure branch ID and PR title ID are the same.
+7. Ensure branch ID and PR title ID are the same.
 
 Release PR rule:
 
@@ -27,12 +31,17 @@ Strict enforcement toggle:
 - Repo variable `STRICT_LINEAR_ENFORCEMENT` controls strict validation.
 - Default behavior is strict (`true`).
 
+## Current script naming policy
+
+- Keep a stable import path in `scripts/current/` as `M-Game Clean Audio.user.js` (no version suffix).
+- When releasing a new version, archive the previous versioned artifact under `scripts/legacy/` and ensure docs/checks still reference the stable current path.
+
 ## Local checks before PR
 
 Run:
 
 ```bash
-node --check "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+node --check "scripts/current/M-Game Clean Audio.user.js"
 bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav"
 ```
 

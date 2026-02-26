@@ -1,36 +1,43 @@
-# Install and Live Test (Atlas + X Spaces)
+# Install, Scope, and Rollback Guide
 
-## 1) Install the v8.0 script in Tampermonkey
+This guide documents the current Tampermonkey userscript workflow in this repository:
 
-Use the script file:
+- `scripts/current/M-Game Clean Audio.user.js`
 
-- `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+For the standalone v9 strict WebRTC blocker flow, use:
 
-### Option A: Import via Tampermonkey UI (recommended)
+- `docs/setup/webrtc-strict-blocker-install.md`
 
-1. Open Tampermonkey dashboard in Atlas browser.
-2. Click `Utilities` -> `Import from file`.
-3. Select:
-   - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
-4. Save and ensure script is **Enabled**.
+The script runs in Tampermonkey and applies strict WebRTC audio handling defaults with a compatibility fallback profile.
 
-### Option B: Paste script manually
+---
 
-1. Tampermonkey -> `Create a new script`.
-2. Replace all content with the file contents above.
-3. Save and ensure script is **Enabled**.
+## 1) Install flow
 
-## 2) Atlas runtime setup
+### Prerequisites
 
-1. Open Atlas: `https://chatgpt.com/atlas/`.
-2. Join or start an X Space flow.
-3. In microphone selection, confirm:
-   - `Default - M-Game RGB Dual Stream`
-4. Start publishing audio.
+- Chromium-based browser with Tampermonkey installed.
+- Access to one of the supported domains (listed in [Domain scope](#2-domain-scope)).
 
-## 3) Verify script loaded
+### Option A: Import from file (recommended)
 
-Open DevTools Console and run:
+1. Open Tampermonkey dashboard.
+2. Go to **Utilities** -> **Import from file**.
+3. Choose:
+   - `scripts/current/M-Game Clean Audio.user.js`
+4. Save and verify the script is **Enabled**.
+
+### Option B: Create manually
+
+1. Tampermonkey -> **Create a new script**.
+2. Replace editor content with the file above.
+3. Save and verify the script is **Enabled**.
+
+### Verify installation
+
+1. Open a supported site tab and reload it.
+2. Open DevTools Console.
+3. Run:
 
 ```js
 mgameStatus()
@@ -38,101 +45,113 @@ mgameStatus()
 
 Expected:
 
-- `version: "8.0-transport-first"`
-- Non-empty `captureInputLabel` after capture starts
-- `senderSummary` entries when publishing
-- W3C constraints shown as supported where available
-- `profile: "strict"` by default
+- `version` is present.
+- `profile` is present (`strict` by default).
+- `supportedConstraints` is populated where browser support exists.
 
-## 4) Live diagnostics sequence (Atlas)
+---
 
-Run in this order while actively publishing:
+## 2) Domain scope
+
+The script is intentionally scoped by metadata `@match` rules to these domains:
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+- `https://chatgpt.com/*`
+
+Practical implications:
+
+- The script does not run on other websites unless `@match` values are changed.
+- Atlas usage is covered under `chatgpt.com` URLs.
+- X Spaces usage is covered under `x.com` and `twitter.com` URLs.
+
+---
+
+## 3) Live session checks
+
+1. Open Atlas or X Spaces in a supported tab.
+2. Start/join the live flow and begin publishing audio.
+3. In Console, run checks in order:
 
 ```js
 mgameInspect()
-```
-
-- Confirms active PeerConnections and audio sender rows.
-
-```js
 await mgameStereoProbe(1500)
-```
-
-- Checks runtime stereo integrity indicator.
-- If warning says channels are nearly identical, treat as dual-mono risk.
-
-```js
 await mgameDropoutProbe(500, 12000)
-```
-
-- Looks for stalled outbound RTP windows.
-- Target: `dropouts: 0` for continuous source material.
-
-```js
-await mgameStats(2000, 20000)
-```
-
-- Tracks outbound bitrate continuity across 20s.
-
-```js
 await mgameCodecProbe(1200, 12000)
-```
-
-- Captures outbound codec and transport snapshots over time.
-
-```js
 await mgameGateCheck(500, 12000)
 ```
 
-- Runs full gate checks (dropout + stereo + codec + Opus SDP guard).
-- If this fails in strict mode, fallback quickly:
+If strict mode fails, switch to compatibility profile and re-check:
 
 ```js
 mgameProfile('compat_v52')
 await mgameGateCheck(500, 12000)
 ```
 
-- Optional live gain in compat mode:
+---
+
+## 4) Explicit limitations and known breakage
+
+These constraints are known and expected:
+
+1. **Browser and engine variability**
+   - Constraint support differs by browser build and platform.
+   - Some `getUserMedia` or sender parameter hints can be ignored at runtime.
+
+2. **Profile behavior differences**
+   - `strict` is default and prioritizes transport and stereo checks.
+   - `compat_v52` may be required on unstable renegotiation paths.
+
+3. **Stereo gate sensitivity**
+   - Stereo diagnostics can flag near-identical channels as dual-mono risk.
+   - Some program material may look near-identical even when not fully broken.
+
+4. **Site update risk**
+   - Atlas/X Spaces frontend changes can alter timing, sender wiring, or negotiation behavior.
+   - Previously passing checks can regress after site deploys.
+
+5. **Out-of-scope behavior**
+   - The script does not modify native desktop apps.
+   - The script does not guarantee identical behavior across all hardware or driver paths.
+
+---
+
+## 5) Rollback and recovery
+
+### Fast rollback (no tab reload first)
 
 ```js
-mgameGain(1.2)
+mgameProfile('compat_v52')
 ```
 
-## 5) Manual listening checklist
+Then re-run:
 
-1. Continuous music-only source for at least 30s.
-   - Expect no audible dropouts.
-2. Voice-only speaking test for at least 20s.
-   - Expect stable level and clarity.
-3. Voice + music overlap for at least 30s.
-   - Expect no sudden mute/gaps.
-4. Rejoin or renegotiate session.
-   - Re-run `mgameStatus()` and `mgameInspect()`.
+```js
+await mgameGateCheck(500, 12000)
+```
 
-## 6) Capture and compare regression metrics
+### Full rollback
 
-If you record a new WAV evidence file, run:
+1. Disable the userscript in Tampermonkey.
+2. Reload the affected Atlas/X tab.
+3. Re-test publishing.
+
+### Legacy rollback target
+
+If needed, temporarily use a known older script from:
+
+- `scripts/legacy/`
+
+---
+
+## 6) Validation and evidence capture
+
+For audio capture regression checks:
 
 ```bash
-bash scripts/tools/analyze_capture_metrics.sh "/absolute/path/to/new-capture.wav"
+bash scripts/tools/analyze_capture_metrics.sh "/absolute/path/to/capture.wav"
 ```
 
-Baseline reference file:
+Baseline reference capture:
 
 - `evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav`
-
-Target improvements vs baseline:
-
-- Higher integrated loudness than `-38.21 LUFS`
-- Fewer/no silence windows during continuous playback
-- Better L/R separation than near-noise-floor residual
-
-## 7) Quick rollback
-
-If something breaks during live session:
-
-1. First try `mgameProfile('compat_v52')` (no reload required).
-2. If still broken, disable the script in Tampermonkey.
-2. Reload Atlas tab.
-3. Re-test with previous known script from:
-   - `scripts/legacy/`

@@ -25,23 +25,17 @@ jobs:
       cancel-in-progress: false
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
-      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
+      LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+      LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate configuration
         run: |
-          if [ -z "${LINEAR_API_KEY:-}" ]; then
-            echo "Missing required secret: LINEAR_API_KEY"
-            exit 1
-          fi
-          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_TEAM_ID"
-            exit 1
-          fi
-          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_PROJECT_ID"
-            exit 1
-          fi
+          set -euo pipefail
+          source scripts/tools/linear_sync_lib.sh
+          linear_require_env
 
       - name: Load release PR context
         id: pr
@@ -111,6 +105,7 @@ jobs:
 
           TAG_NAME="$VERSION"
           TAG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
 
           LINEAR_TITLE="[Release Tag ${TAG_NAME}] ${GITHUB_REPOSITORY}"
           LINEAR_DESCRIPTION="$(printf '%s\n' \
@@ -126,13 +121,14 @@ jobs:
             "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             "Updated at (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)")"
 
-          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "tag_url=${TAG_URL}" >> "$GITHUB_OUTPUT"
-          echo "merge_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "linear_title=${LINEAR_TITLE}" >> "$GITHUB_OUTPUT"
           DELIMITER="EOF_$(date +%s)_$RANDOM"
           {
+            echo "pr_number=${PR_NUMBER}"
+            echo "tag_name=${TAG_NAME}"
+            echo "tag_url=${TAG_URL}"
+            echo "release_url=${RELEASE_URL}"
+            echo "merge_sha=${MERGE_SHA}"
+            echo "linear_title=${LINEAR_TITLE}"
             echo "linear_description<<${DELIMITER}"
             echo "${LINEAR_DESCRIPTION}"
             echo "${DELIMITER}"
@@ -338,10 +334,56 @@ jobs:
             ACTION="created"
           fi
 
-          echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
-          echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
-          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
-          echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+          {
+            echo "action=${ACTION}"
+            echo "linear_id=${LINEAR_ID}"
+            echo "linear_identifier=${LINEAR_IDENTIFIER}"
+            echo "linear_url=${LINEAR_URL}"
+          } >> "$GITHUB_OUTPUT"
+          source scripts/tools/linear_sync_lib.sh
+          linear_emit_summary "$LINEAR_IDENTIFIER" "$ACTION"
+
+      - name: Create draft GitHub release if missing
+        id: release
+        uses: actions/github-script@v7
+        env:
+          TAG_NAME: ${{ steps.context.outputs.tag_name }}
+          MERGE_SHA: ${{ steps.context.outputs.merge_sha }}
+        with:
+          script: |
+            const tagName = process.env.TAG_NAME;
+            const mergeSha = process.env.MERGE_SHA;
+
+            try {
+              const existingRelease = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              });
+              core.info(`Release for ${tagName} already exists (#${existingRelease.data.id}). Skipping creation.`);
+              core.setOutput('release_action', 'already_exists');
+              core.setOutput('release_url', existingRelease.data.html_url || '');
+              core.setOutput('release_id', String(existingRelease.data.id));
+              return;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            const createdRelease = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              target_commitish: mergeSha,
+              draft: true,
+              generate_release_notes: true,
+            });
+
+            core.info(`Created draft release for ${tagName}: ${createdRelease.data.html_url}`);
+            core.setOutput('release_action', 'created');
+            core.setOutput('release_url', createdRelease.data.html_url || '');
+            core.setOutput('release_id', String(createdRelease.data.id));
 
       - name: Close Linear release PR issue
         id: linear_release_close
@@ -397,6 +439,8 @@ jobs:
             const releaseLinearUrl = `${{ steps.release_mapping.outputs.linear_url }}`;
             const releaseCloseAction = `${{ steps.linear_release_close.outputs.action }}`;
             const tagAction = `${{ steps.tag.outputs.tag_action }}`;
+            const releaseAction = `${{ steps.release.outputs.release_action }}`;
+            const releaseUrl = `${{ steps.release.outputs.release_url || steps.context.outputs.release_url }}`;
             const tagName = `${{ steps.context.outputs.tag_name }}`;
             const tagUrl = `${{ steps.context.outputs.tag_url }}`;
 
@@ -409,6 +453,8 @@ jobs:
               `- Tag: ${tagName}`,
               `- Tag URL: ${tagUrl}`,
               `- Tag action: ${tagAction}`,
+              `- Draft release URL: ${releaseUrl}`,
+              `- Draft release action: ${releaseAction}`,
               `- Linear tag action: ${linearAction}`,
               `- Linear tag ticket: ${linearIdentifier}`,
               `- Linear tag URL: ${linearUrl}`,

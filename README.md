@@ -2,17 +2,17 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository currently focuses on one priority for `v8.0`: **music transport integrity first**.
+This repository tracks two active tracks:
 
-- Transport-first baseline (Opus music SDP guard + sender hints)
-- Strict stereo gate diagnostics
-- One-command `v5.2` compatibility fallback profile
-- Reproducible audio evidence workflow
+- `v8.x` transport-first music stability for Atlas/X Spaces
+- `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
 
-- Current script:
-  - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- Current scripts:
+  - `scripts/current/M-Game Clean Audio.user.js`
+  - `scripts/current/WebRTC Strict Blocker.user.js`
+  - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
@@ -23,11 +23,15 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
+> Maintainer reminder: keep `scripts/current/M-Game Clean Audio.user.js` as the stable import path, and archive versioned releases under `scripts/legacy/`.
+
 ## Quick Start
 
-1. Import `scripts/current/M-Game Clean Audio v7.0-baseline.user.js` into Tampermonkey.
-2. Enable the script and reload Atlas/X tab.
-3. In Atlas, select mic input:
+1. Import one of the current scripts into Tampermonkey:
+   - `scripts/current/M-Game Clean Audio.user.js` (transport-first Atlas/X path)
+   - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
+2. Enable the script and reload the target tab.
+3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`
 4. Open DevTools Console and verify:
 
@@ -35,7 +39,12 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 mgameStatus()
 ```
 
-For full install and live test flow, use `INSTALL.md`.
+For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
+
+For strict-blocker install and validation flow, use:
+
+- `docs/setup/webrtc-strict-blocker-install.md`
+- `docs/validation/v9-strict-blocker-validation.md`
 
 For Linear/GitHub/Codex automation setup, use:
 
@@ -43,19 +52,38 @@ For Linear/GitHub/Codex automation setup, use:
 
 ## Workflow
 
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic word in PR body/commit: `Closes CE-<number>`
-- Keep the same `CE-<number>` in branch, title, and any magic-word line.
+- Always start by syncing `development` locally before new feature work:
+  - `git checkout development`
+  - `git pull origin development`
+- Branch format: `codex/<TEAM>-<number>-<slug>`
+- PR title format: `[<TEAM>-<number>] <short title>`
+- Optional magic word in PR body/commit: `Closes <TEAM>-<number>`
+- Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
+- Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
 Example:
 
 ```text
-Branch: codex/CE-321-fix-stereo-gate
-Title:  [CE-321] Fix stereo gate false positive
-Body:   Closes CE-321
+Branch: codex/CRIS-321-fix-stereo-gate
+Title:  [CRIS-321] Fix stereo gate false positive
+Body:   Closes CRIS-321
 ```
+
+## Strict Blocker Scope and Constraints
+
+The current userscript scope for this guide is limited to:
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+- `https://chatgpt.com/*`
+
+Known constraints and rollback guidance are documented in `INSTALL.md`:
+
+- Install flow
+- Domain scope
+- Explicit limitations and known breakage
+- Fast rollback (`mgameProfile('compat_v52')`) and full rollback
 
 ## Runtime Diagnostics
 
@@ -111,10 +139,14 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 
 ## v8 Roadmap
 
-- `v8.0` (current): transport-first + strict stereo gates + `compat_v52` fallback
-- `v8.1` (gated): incremental hardening only after repeated gate-check passes
+- `v8.0`: transport-first + strict stereo gates + `compat_v52` fallback
+- `v8.1` (released): gated hardening promoted from `development` to `master` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
+
+For v9 strict-blocker release planning, see:
+
+- `docs/changelog/v9-roadmap.md`
 
 ## Project Context Images
 

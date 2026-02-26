@@ -19,23 +19,17 @@ jobs:
       cancel-in-progress: false
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
-      LINEAR_TEAM_ID: ${{ vars.LINEAR_TEAM_ID }}
-      LINEAR_PROJECT_ID: ${{ vars.LINEAR_PROJECT_ID }}
+      LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+      LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Validate configuration
         run: |
-          if [ -z "${LINEAR_API_KEY:-}" ]; then
-            echo "Missing required secret: LINEAR_API_KEY"
-            exit 1
-          fi
-          if [ -z "${LINEAR_TEAM_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_TEAM_ID"
-            exit 1
-          fi
-          if [ -z "${LINEAR_PROJECT_ID:-}" ]; then
-            echo "Missing required repo variable: LINEAR_PROJECT_ID"
-            exit 1
-          fi
+          set -euo pipefail
+          source scripts/tools/linear_sync_lib.sh
+          linear_require_env
 
       - name: Build release context
         id: context
@@ -66,10 +60,10 @@ jobs:
             "PR body:" \
             "${PR_BODY}")"
 
-          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "linear_title=${LINEAR_TITLE}" >> "$GITHUB_OUTPUT"
           DELIMITER="EOF_$(date +%s)_$RANDOM"
           {
+            echo "pr_number=${PR_NUMBER}"
+            echo "linear_title=${LINEAR_TITLE}"
             echo "linear_description<<${DELIMITER}"
             echo "${LINEAR_DESCRIPTION}"
             echo "${DELIMITER}"
@@ -188,10 +182,14 @@ jobs:
             ACTION="created"
           fi
 
-          echo "action=${ACTION}" >> "$GITHUB_OUTPUT"
-          echo "linear_id=${LINEAR_ID}" >> "$GITHUB_OUTPUT"
-          echo "linear_identifier=${LINEAR_IDENTIFIER}" >> "$GITHUB_OUTPUT"
-          echo "linear_url=${LINEAR_URL}" >> "$GITHUB_OUTPUT"
+          {
+            echo "action=${ACTION}"
+            echo "linear_id=${LINEAR_ID}"
+            echo "linear_identifier=${LINEAR_IDENTIFIER}"
+            echo "linear_url=${LINEAR_URL}"
+          } >> "$GITHUB_OUTPUT"
+          source scripts/tools/linear_sync_lib.sh
+          linear_emit_summary "$LINEAR_IDENTIFIER" "$ACTION"
 
       - name: Upsert PR comment with Linear release link
         uses: actions/github-script@v7

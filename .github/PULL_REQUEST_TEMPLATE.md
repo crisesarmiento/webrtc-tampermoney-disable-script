@@ -4,10 +4,10 @@ Describe what changed and why.
 
 ## Linear Issue
 
-- Linear ID: `CE-<number>`
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic word example: `Closes CE-<number>`
+- Linear ID: `<TEAM>-<number>` (example: `CRIS-123`)
+- Branch format: `codex/<TEAM>-<number>-<slug>`
+- PR title format: `[<TEAM>-<number>] <short title>`
+- Optional magic word example: `Closes <TEAM>-<number>`
 
 ## Scope
 
@@ -22,7 +22,7 @@ Describe what changed and why.
 List exact commands run and key results.
 
 ```bash
-node --check "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+node --check "scripts/current/M-Game Clean Audio.user.js"
 bash "scripts/tools/analyze_capture_metrics.sh" "evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav"
 ```
 

@@ -22,11 +22,28 @@ jobs:
       - name: Install CLI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg ripgrep
+          sudo apt-get install -y ffmpeg ripgrep shellcheck
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash -o /tmp/download-actionlint.bash
+          bash /tmp/download-actionlint.bash latest
+          mkdir -p "${PWD}/bin"
+          if [ -x "${PWD}/actionlint" ]; then
+            mv "${PWD}/actionlint" "${PWD}/bin/actionlint"
+          fi
+          if [ ! -x "${PWD}/bin/actionlint" ]; then
+            echo "actionlint binary not found after installation."
+            ls -la "${PWD}"
+            exit 1
+          fi
+          echo "${PWD}/bin" >> "$GITHUB_PATH"
+          "${PWD}/bin/actionlint" -version
 
       - name: Verify required project files
         run: |
-          test -f "scripts/current/M-Game Clean Audio v7.0-baseline.user.js"
+          test -f "scripts/current/M-Game Clean Audio.user.js"
           test -f "scripts/tools/analyze_capture_metrics.sh"
           test -f "INSTALL.md"
           test -f "README.md"
@@ -51,3 +68,19 @@ jobs:
           fi
           bash "scripts/tools/analyze_capture_metrics.sh" "$SAMPLE_WAV" > /tmp/audio-metrics.txt
           rg -n "input_i|input_tp|mean_volume|max_volume|L-R residual" /tmp/audio-metrics.txt
+
+
+      - name: Workflow lint checks
+        run: |
+          actionlint
+
+      - name: Shell strict-mode checks
+        run: |
+          bash -n "scripts/tools/analyze_capture_metrics.sh"
+          bash -n "scripts/tools/linear_sync_lib.sh"
+          bash -n "scripts/tools/test_require_linked_issue_contract.sh"
+          shellcheck scripts/tools/linear_sync_lib.sh scripts/tools/test_require_linked_issue_contract.sh
+
+      - name: PR payload smoke tests
+        run: |
+          bash scripts/tools/test_require_linked_issue_contract.sh
