@@ -89,16 +89,16 @@ jobs:
             exit 1
           fi
 
-          if [[ ! "$HEAD_REF" =~ ^codex/(CE-[0-9]+)-[a-z0-9][a-z0-9._-]*$ ]]; then
-            echo "Branch name must match codex/CE-<number>-<slug>."
-            echo "Example: codex/CE-123-fix-stereo-gate"
+          if [[ ! "$HEAD_REF" =~ ^codex/([A-Z]+-[0-9]+)-[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "Branch name must match codex/<TEAM>-<number>-<slug>."
+            echo "Example: codex/CRIS-123-fix-stereo-gate"
             exit 1
           fi
           BRANCH_LINEAR_ID="${BASH_REMATCH[1]}"
 
-          if [[ ! "$PR_TITLE_VALUE" =~ ^\[(CE-[0-9]+)\][[:space:]]+.+$ ]]; then
-            echo "PR title must match [CE-<number>] <short title>."
-            echo "Example: [CE-123] Fix stereo gate false positive"
+          if [[ ! "$PR_TITLE_VALUE" =~ ^\[([A-Z]+-[0-9]+)\][[:space:]]+.+$ ]]; then
+            echo "PR title must match [<TEAM>-<number>] <short title>."
+            echo "Example: [CRIS-123] Fix stereo gate false positive"
             exit 1
           fi
           TITLE_LINEAR_ID="${BASH_REMATCH[1]}"
@@ -110,7 +110,7 @@ jobs:
             exit 1
           fi
 
-          MAGIC_IDS="$(printf '%s\n' "$PR_BODY_VALUE" | grep -Eio '(close[sd]?|fix(e[sd])?|resolve[sd]?)[:[:space:]]+CE-[0-9]+' | grep -Eio 'CE-[0-9]+' | sort -u || true)"
+          MAGIC_IDS="$(printf '%s\n' "$PR_BODY_VALUE" | tr '[:lower:]' '[:upper:]' | grep -Eo '(CLOSE[SD]?|FIX(E[SD])?|RESOLVE[SD]?)[:[:space:]]+[A-Z]+-[0-9]+' | grep -Eo '[A-Z]+-[0-9]+' | sort -u || true)"
           if [ -n "$MAGIC_IDS" ]; then
             while IFS= read -r magic_id; do
               if [ "$magic_id" != "$BRANCH_LINEAR_ID" ]; then
