@@ -39,7 +39,7 @@ This repository tracks two active tracks:
 mgameStatus()
 ```
 
-For full install and live test flow, use `INSTALL.md`.
+For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
 
 For strict-blocker install and validation flow, use:
 
@@ -55,20 +55,35 @@ For Linear/GitHub/Codex automation setup, use:
 - Always start by syncing `development` locally before new feature work:
   - `git checkout development`
   - `git pull origin development`
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic word in PR body/commit: `Closes CE-<number>`
-- Keep the same `CE-<number>` in branch, title, and any magic-word line.
+- Branch format: `codex/<TEAM>-<number>-<slug>`
+- PR title format: `[<TEAM>-<number>] <short title>`
+- Optional magic word in PR body/commit: `Closes <TEAM>-<number>`
+- Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
 - Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
 Example:
 
 ```text
-Branch: codex/CE-321-fix-stereo-gate
-Title:  [CE-321] Fix stereo gate false positive
-Body:   Closes CE-321
+Branch: codex/CRIS-321-fix-stereo-gate
+Title:  [CRIS-321] Fix stereo gate false positive
+Body:   Closes CRIS-321
 ```
+
+## Strict Blocker Scope and Constraints
+
+The current userscript scope for this guide is limited to:
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+- `https://chatgpt.com/*`
+
+Known constraints and rollback guidance are documented in `INSTALL.md`:
+
+- Install flow
+- Domain scope
+- Explicit limitations and known breakage
+- Fast rollback (`mgameProfile('compat_v52')`) and full rollback
 
 ## Runtime Diagnostics
 
