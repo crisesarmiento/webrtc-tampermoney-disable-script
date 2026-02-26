@@ -35,7 +35,7 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 mgameStatus()
 ```
 
-For full install and live test flow, use `INSTALL.md`.
+For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
 
 For Linear/GitHub/Codex automation setup, use:
 
@@ -56,6 +56,22 @@ Branch: codex/CE-321-fix-stereo-gate
 Title:  [CE-321] Fix stereo gate false positive
 Body:   Closes CE-321
 ```
+
+
+## Strict Blocker Scope and Constraints
+
+The current userscript is a standalone strict blocker profile intended for selected domains only:
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+- `https://chatgpt.com/*`
+
+Known constraints and rollback guidance are documented in `INSTALL.md`:
+
+- Install flow
+- Domain scope
+- Explicit limitations / known breakage
+- Fast rollback (`mgameProfile('compat_v52')`) and full rollback
 
 ## Runtime Diagnostics
 
