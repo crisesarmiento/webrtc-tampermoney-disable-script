@@ -1,0 +1,212 @@
+name: codex-review
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  codex-review:
+    name: codex-review
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    env:
+      REQUIRE_CODEX_FEEDBACK: ${{ vars.REQUIRE_CODEX_FEEDBACK }}
+      CODEX_LOGIN_REGEX: ${{ vars.CODEX_LOGIN_REGEX }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect Codex review feedback
+        id: feedback
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = context.payload.pull_request.number;
+            const loginRegex = new RegExp(process.env.CODEX_LOGIN_REGEX || 'codex', 'i');
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: issueNumber,
+              per_page: 100,
+            });
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const isCodexActor = (item) => {
+              const login = item?.user?.login || '';
+              return loginRegex.test(login);
+            };
+
+            const codexReviews = reviews.filter(isCodexActor);
+            const codexComments = comments.filter((comment) => isCodexActor(comment) && !(comment.body || '').includes('<!-- codex-review-gate -->'));
+            const entries = [];
+
+            for (const review of codexReviews.slice(-5)) {
+              const body = (review.body || '').replace(/\s+/g, ' ').trim();
+              entries.push(`- Review (${review.state || 'COMMENTED'}) by @${review.user?.login || 'unknown'}: ${body.slice(0, 300) || 'No body provided.'}`);
+            }
+            for (const comment of codexComments.slice(-5)) {
+              const body = (comment.body || '').replace(/\s+/g, ' ').trim();
+              entries.push(`- Comment by @${comment.user?.login || 'unknown'}: ${body.slice(0, 300) || 'No body provided.'}`);
+            }
+
+            const found = entries.length > 0;
+            core.setOutput('found', found ? 'true' : 'false');
+            core.setOutput('count', String(entries.length));
+            core.setOutput('summary', found ? entries.join('\n') : '- No Codex feedback found yet.');
+
+      - name: Scan changed files for high-risk patterns
+        id: scan
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t changed_files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          if [ "${#changed_files[@]}" -eq 0 ]; then
+            echo "high_risk=false" >> "$GITHUB_OUTPUT"
+            echo "high_risk_count=0" >> "$GITHUB_OUTPUT"
+            echo "findings=- None." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          scan_files=()
+          for file in "${changed_files[@]}"; do
+            [ -f "$file" ] || continue
+            case "$file" in
+              *.png|*.jpg|*.jpeg|*.gif|*.svg|*.ico|*.lock|*.min.js)
+                continue
+                ;;
+            esac
+            scan_files+=("$file")
+          done
+
+          if [ "${#scan_files[@]}" -eq 0 ]; then
+            echo "high_risk=false" >> "$GITHUB_OUTPUT"
+            echo "high_risk_count=0" >> "$GITHUB_OUTPUT"
+            echo "findings=- None." >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          patterns=(
+            "(LINEAR_API_KEY|OPENAI_API_KEY|GITHUB_TOKEN)\\s*[:=]\\s*['\\\"][^$][^'\\\"]{8,}['\\\"]"
+            "(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,})"
+            "\\beval\\s*\\("
+            "\\bnew\\s+Function\\s*\\("
+            "child_process\\.(exec|execSync)\\s*\\("
+            "NODE_TLS_REJECT_UNAUTHORIZED\\s*[:=]\\s*['\\\"]?0\\b"
+          )
+
+          findings_file="/tmp/codex-review-findings.txt"
+          : > "$findings_file"
+
+          for pattern in "${patterns[@]}"; do
+            rg --pcre2 -n --color never "$pattern" "${scan_files[@]}" >> "$findings_file" || true
+          done
+
+          sort -u "$findings_file" -o "$findings_file"
+          high_risk_count="$(wc -l < "$findings_file" | tr -d ' ')"
+          if [ "$high_risk_count" -gt 0 ]; then
+            echo "high_risk=true" >> "$GITHUB_OUTPUT"
+            echo "high_risk_count=${high_risk_count}" >> "$GITHUB_OUTPUT"
+            DELIM="EOF_$(date +%s)_$RANDOM"
+            {
+              echo "findings<<${DELIM}"
+              head -n 40 "$findings_file"
+              echo "${DELIM}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "high_risk=false" >> "$GITHUB_OUTPUT"
+            echo "high_risk_count=0" >> "$GITHUB_OUTPUT"
+            echo "findings=- None." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upsert codex-review gate comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          CODEX_FOUND: ${{ steps.feedback.outputs.found }}
+          CODEX_COUNT: ${{ steps.feedback.outputs.count }}
+          CODEX_SUMMARY: ${{ steps.feedback.outputs.summary }}
+          HIGH_RISK: ${{ steps.scan.outputs.high_risk }}
+          HIGH_RISK_COUNT: ${{ steps.scan.outputs.high_risk_count }}
+          HIGH_RISK_FINDINGS: ${{ steps.scan.outputs.findings }}
+        with:
+          script: |
+            const issueNumber = context.payload.pull_request.number;
+            const marker = '<!-- codex-review-gate -->';
+            const codexFound = process.env.CODEX_FOUND === 'true';
+            const highRisk = process.env.HIGH_RISK === 'true';
+            const body = [
+              marker,
+              'codex-review gate report',
+              '',
+              `- Codex feedback detected: ${codexFound ? 'yes' : 'no'}`,
+              `- Codex feedback items scanned: ${process.env.CODEX_COUNT || '0'}`,
+              `- High-risk findings: ${process.env.HIGH_RISK_COUNT || '0'}`,
+              `- High-risk gate status: ${highRisk ? 'failed' : 'passed'}`,
+              '',
+              'Codex feedback summary:',
+              process.env.CODEX_SUMMARY || '- No Codex feedback found yet.',
+              '',
+              'High-risk findings:',
+              process.env.HIGH_RISK_FINDINGS || '- None.',
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => (comment.body || '').includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body,
+            });
+
+      - name: Enforce codex-review gate
+        env:
+          CODEX_FOUND: ${{ steps.feedback.outputs.found }}
+          HIGH_RISK: ${{ steps.scan.outputs.high_risk }}
+          HIGH_RISK_COUNT: ${{ steps.scan.outputs.high_risk_count }}
+          REQUIRE_CODEX_FEEDBACK: ${{ env.REQUIRE_CODEX_FEEDBACK }}
+        run: |
+          set -euo pipefail
+          require_codex="$(printf '%s' "${REQUIRE_CODEX_FEEDBACK:-false}" | tr '[:upper:]' '[:lower:]')"
+          if [ "$require_codex" = "true" ] && [ "${CODEX_FOUND}" != "true" ]; then
+            echo "REQUIRE_CODEX_FEEDBACK=true, but no Codex feedback was detected for this PR."
+            exit 1
+          fi
+          if [ "${HIGH_RISK}" = "true" ]; then
+            echo "High-risk patterns detected (${HIGH_RISK_COUNT})."
+            exit 1
+          fi
+          echo "codex-review gate passed."

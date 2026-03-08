@@ -17,10 +17,11 @@ linear_require_env() {
 }
 
 linear_emit_summary() {
-  local ce_id="$1"
+  local linear_id="$1"
   local status="$2"
   local reason="${3:-}"
-  local line="linear_sync ce_id=${ce_id} status=${status}"
+  # Keep both keys for compatibility with older log parsers.
+  local line="linear_sync linear_id=${linear_id} ce_id=${linear_id} status=${status}"
   if [ -n "$reason" ]; then
     line+=" reason=${reason}"
   fi

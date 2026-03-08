@@ -7,7 +7,7 @@
    - `LINEAR_TEAM_ID`
    - `LINEAR_PROJECT_ID`
 2. Verify workflow run input payload and event type.
-3. Confirm the run log contains `linear_sync ce_id=... status=...` summary lines.
+3. Confirm the run log contains `linear_sync linear_id=... status=...` summary lines (`ce_id=...` is included for backward compatibility).
 
 ## Re-trigger procedures
 
@@ -21,7 +21,7 @@
   - Symptoms: network errors, HTTP 5xx, GraphQL transport failures.
   - Action: retry and monitor API status.
 - `not_found`
-  - Symptoms: missing mapping comment, missing CE/issue lookup result.
+  - Symptoms: missing mapping comment, missing Linear issue lookup result.
   - Action: verify issue references; no-op is expected in some branches.
 - `failed`
   - Symptoms: workflow script validation/contract failure.
@@ -29,7 +29,7 @@
 
 ## Recover stale Linear states
 
-1. Locate affected CE ticket.
+1. Locate affected Linear ticket.
 2. Re-run the owning workflow event path (`opened`, `ready_for_review`, `merged`).
 3. If needed, update state manually in Linear and leave a GitHub comment with the correction.
 4. Keep the PR/issue mapping comments unchanged to preserve idempotent upserts.

@@ -1,10 +1,12 @@
 # Install, Scope, and Rollback Guide
 
-This guide documents the current Tampermonkey userscript workflow in this repository:
+This guide documents the current Tampermonkey userscript workflow for this repository.
+
+Current script path:
 
 - `scripts/current/M-Game Clean Audio.user.js`
 
-For the standalone v9 strict WebRTC blocker flow, use:
+For the standalone v9 strict WebRTC blocker workflow, use:
 
 - `docs/setup/webrtc-strict-blocker-install.md`
 
@@ -21,7 +23,7 @@ The script runs in Tampermonkey and applies strict WebRTC audio handling default
 
 ### Option A: Import from file (recommended)
 
-1. Open Tampermonkey dashboard.
+1. Open the Tampermonkey dashboard.
 2. Go to **Utilities** -> **Import from file**.
 3. Choose:
    - `scripts/current/M-Game Clean Audio.user.js`

@@ -6,13 +6,14 @@ This repository uses an OAuth-first Codex + Linear + GitHub workflow.
 
 For normal work PRs into `development`:
 
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic words in PR body/commits (`Closes/Fixes/Resolves CE-<number>`) must use the same `CE-<number>` as branch/title.
+- Branch format: `codex/<TEAM>-<number>-<slug>` (example: `codex/CRIS-123-fix-stereo-gate`)
+- PR title format: `[<TEAM>-<number>] <short title>` (example: `[CRIS-123] Fix stereo gate false positive`)
+- Optional magic words in PR body/commits (`Closes/Fixes/Resolves <TEAM>-<number>`) must use the same ID as branch/title.
+- Set repository default branch to `development` so Codex starts tasks from the integration branch.
 
 Release exemption:
 
-- `development -> master` PRs are exempt from branch/title enforcement.
+- `development -> main` PRs are exempt from branch/title enforcement.
 
 Strict toggle:
 

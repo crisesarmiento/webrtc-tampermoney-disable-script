@@ -2,7 +2,7 @@ name: Sync Release PR To Linear
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
     types: [opened, edited, reopened, synchronize]
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
 jobs:
   sync-release-pr:
     runs-on: ubuntu-latest
-    if: ${{ github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development' }}
+    if: ${{ github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'development' }}
     concurrency:
       group: linear-release-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
@@ -45,9 +45,9 @@ jobs:
             VERSION="release"
           fi
 
-          LINEAR_TITLE="[Release ${VERSION}] Promote development -> master (GH PR #${PR_NUMBER})"
+          LINEAR_TITLE="[Release ${VERSION}] Promote development -> main (GH PR #${PR_NUMBER})"
           LINEAR_DESCRIPTION="$(printf '%s\n' \
-            "Automated release tracking for development -> master promotion." \
+            "Automated release tracking for development -> main promotion." \
             "" \
             "GitHub PR: ${PR_URL}" \
             "Repository: ${GITHUB_REPOSITORY}" \

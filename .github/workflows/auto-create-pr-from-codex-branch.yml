@@ -6,8 +6,12 @@ on:
       - codex/**
       - ce-*
       - CE-*
+      - cris-*
+      - CRIS-*
       - feature/ce-*
       - feature/CE-*
+      - feature/cris-*
+      - feature/CRIS-*
 
 permissions:
   contents: write
@@ -26,8 +30,8 @@ jobs:
           script: |
             const sourceBranch = context.ref.replace('refs/heads/', '');
             const sourceSha = context.sha;
-            const canonicalPattern = /^codex\/(CE-\d+)-([a-z0-9][a-z0-9._-]*)$/;
-            const legacyPattern = /^(?:feature\/)?(ce-\d+)-(.+)$/i;
+            const canonicalPattern = /^codex\/([A-Z]+-\d+)-([a-z0-9][a-z0-9._-]*)$/;
+            const legacyPattern = /^(?:feature\/)?([a-z]+-\d+)-(.+)$/i;
 
             try {
               const sourceRef = await github.rest.git.getRef({
@@ -145,9 +149,9 @@ jobs:
               '',
               '## Linear Issue',
               `- Linear ID: \`${linearId}\``,
-              '- Branch format: `codex/CE-<number>-<slug>`',
-              '- PR title format: `[CE-<number>] <short title>`',
-              '- Optional magic word example: `Closes CE-<number>`',
+              '- Branch format: `codex/<TEAM>-<number>-<slug>`',
+              '- PR title format: `[<TEAM>-<number>] <short title>`',
+              '- Optional magic word example: `Closes <TEAM>-<number>`',
               '',
               `Closes ${linearId}`,
             ].filter(Boolean).join('\n');

@@ -59,6 +59,8 @@ For Linear/GitHub/Codex automation setup, use:
 - PR title format: `[<TEAM>-<number>] <short title>`
 - Optional magic word in PR body/commit: `Closes <TEAM>-<number>`
 - Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
+- Keep repository default branch set to `development` so Codex starts from the integration branch.
+- Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
 - Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
@@ -140,7 +142,7 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 ## v8 Roadmap
 
 - `v8.0`: transport-first + strict stereo gates + `compat_v52` fallback
-- `v8.1` (released): gated hardening promoted from `development` to `master` via release tag `v8.1`
+- `v8.1` (released): gated hardening promoted from `development` to `main` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
 

@@ -1,4 +1,4 @@
-name: Sync CE PR Merge To Linear Done
+name: Sync Linear PR Merge To Linear Done
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       ce_identifiers:
-        description: "Optional CE identifiers to process (space/comma/newline separated)"
+        description: "Optional Linear identifiers to process (space/comma/newline separated)"
         required: false
         type: string
 
@@ -22,7 +22,7 @@ permissions:
 jobs:
   sync-linear-done:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'development' && startsWith(github.event.pull_request.head.ref, 'codex/CE-')) || github.event_name == 'workflow_dispatch' }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'development' && startsWith(github.event.pull_request.head.ref, 'codex/')) || github.event_name == 'workflow_dispatch' }}
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
       LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
@@ -74,8 +74,8 @@ jobs:
                 core.setFailed(`PR #${pr.number} base is ${pr.base?.ref}; expected development.`);
                 return;
               }
-              if (!String(pr.head?.ref || '').startsWith('codex/CE-')) {
-                core.setFailed(`PR #${pr.number} head ref is ${pr.head?.ref}; expected codex/CE-...`);
+              if (!String(pr.head?.ref || '').startsWith('codex/')) {
+                core.setFailed(`PR #${pr.number} head ref is ${pr.head?.ref}; expected codex/<TEAM>-...`);
                 return;
               }
 
@@ -93,7 +93,7 @@ jobs:
             core.setOutput('head_ref', '');
             core.setOutput('pr_url', '');
 
-      - name: Collect CE identifiers
+      - name: Collect Linear identifiers
         id: ce
         env:
           PR_TITLE: ${{ steps.pr.outputs.pr_title }}
@@ -108,19 +108,19 @@ jobs:
             printf '%s\n' "$INPUT_CE_IDENTIFIERS"
           } \
             | tr '[:lower:]' '[:upper:]' \
-            | grep -Eo 'CE-[0-9]+' \
-            | grep -E '^CE-[0-9]+$' \
+            | grep -Eo '[A-Z]+-[0-9]+' \
+            | grep -E '^[A-Z]+-[0-9]+$' \
             | sort -u > ce_ids.txt || true
 
           COUNT="$(wc -l < ce_ids.txt | tr -d ' ')"
           echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
 
-          echo "Discovered ${COUNT} CE identifier(s)."
+          echo "Discovered ${COUNT} Linear identifier(s)."
           if [ "$COUNT" -gt 0 ]; then
             sed 's/^/- /' ce_ids.txt
           fi
 
-      - name: Resolve Linear completed state id
+      - name: Resolve Linear Done state id
         id: done_state
         if: ${{ steps.ce.outputs.count != '0' }}
         run: |
@@ -143,16 +143,19 @@ jobs:
             exit 1
           fi
 
-          DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
+          DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "done") | .id' | head -n 1)"
           if [ -z "$DONE_STATE_ID" ] || [ "$DONE_STATE_ID" = "null" ]; then
-            echo "Could not resolve completed state id for team ${LINEAR_TEAM_ID}."
+            DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
+          fi
+          if [ -z "$DONE_STATE_ID" ] || [ "$DONE_STATE_ID" = "null" ]; then
+            echo "Could not resolve Done/completed state id for team ${LINEAR_TEAM_ID}."
             echo "$RESPONSE"
             exit 1
           fi
 
           echo "done_state_id=${DONE_STATE_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Sync CE issues to Done
+      - name: Sync Linear issues to Done
         if: ${{ steps.ce.outputs.count != '0' }}
         env:
           DONE_STATE_ID: ${{ steps.done_state.outputs.done_state_id }}
@@ -254,10 +257,10 @@ jobs:
           echo "Summary: total=${total}, updated=${updated}, already_done=${already_done}, not_found=${not_found}, failed=${failed}"
 
           if [ "$failed" -gt 0 ]; then
-            echo "One or more CE identifiers failed due to infrastructure/API errors."
+            echo "One or more Linear identifiers failed due to infrastructure/API errors."
             exit 1
           fi
 
-      - name: No CE identifiers found
+      - name: No Linear identifiers found
         if: ${{ steps.ce.outputs.count == '0' }}
-        run: echo "No CE identifiers discovered. Nothing to update."
+        run: echo "No Linear identifiers discovered. Nothing to update."

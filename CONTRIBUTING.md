@@ -3,28 +3,28 @@
 ## Branching model
 
 - `development` is the integration branch.
-- `master` is the stable branch.
+- `main` is the stable branch.
 - Normal work PRs target `development`.
-- Release PRs go from `development` to `master`.
+- Release PRs go from `development` to `main`.
 
 ## Mandatory Linear-first workflow
 
-1. Start from a Linear issue (`CE-<number>`).
+1. Start from a Linear issue (`<TEAM>-<number>`, for example `CRIS-123`).
 2. Sync local `development` to the latest remote before creating your feature branch:
    - `git checkout development`
    - `git pull origin development`
 3. Create one branch from the updated `development` using:
-   - `codex/CE-<number>-<slug>`
+   - `codex/<TEAM>-<number>-<slug>`
 4. Open PR to `development` with title:
-   - `[CE-<number>] <short title>`
+   - `[<TEAM>-<number>] <short title>`
 5. Keep your branch current with `development` while work is in progress (rebase or merge) so the PR reflects the latest integration branch state.
 6. Optional in PR body or commit message:
-   - `Closes CE-<number>`
+   - `Closes <TEAM>-<number>`
 7. Ensure branch ID and PR title ID are the same.
 
 Release PR rule:
 
-- `development -> master` release PRs are exempt from Linear branch/title checks.
+- `development -> main` release PRs are exempt from Linear branch/title checks.
 
 Strict enforcement toggle:
 
