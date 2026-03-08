@@ -27,7 +27,7 @@ jobs:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
       LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
       LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
-      GH_TOKEN: ${{ secrets.RELEASE_PAT }}  # ← NEW: Use your fine-grained PAT for all GitHub API calls (github-script, tags, releases)
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}  # Used by authenticated CLI/git operations in this job.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +48,7 @@ jobs:
         env:
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const isDispatch = context.eventName === 'workflow_dispatch';
             let pr;
@@ -143,10 +144,14 @@ jobs:
           EXPLICIT_VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
           BUMP_LEVEL="patch"
           BUMP_SOURCE="label:patch"
+          EXISTING_TAG_FOR_MERGE="$(git tag --list 'v*' --points-at "$MERGE_SHA" | sort -V | tail -n 1 || true)"
 
           if [ -n "$EXPLICIT_VERSION" ]; then
             TAG_NAME="v$(normalize_version "$EXPLICIT_VERSION")"
             BUMP_SOURCE="explicit_pr_version"
+          elif [ -n "$EXISTING_TAG_FOR_MERGE" ]; then
+            TAG_NAME="$EXISTING_TAG_FOR_MERGE"
+            BUMP_SOURCE="existing_tag_for_merge_sha"
           else
             if printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:major$"; "i"))' > /dev/null; then
               BUMP_LEVEL="major"
@@ -200,6 +205,7 @@ jobs:
         id: release_mapping
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const markerId = /<!--\s*linear-release-ticket-id:([^\s>]+)\s*-->/i;
@@ -230,6 +236,7 @@ jobs:
         id: tag_mapping
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
@@ -370,6 +377,7 @@ jobs:
           TAG_NAME: ${{ steps.context.outputs.tag_name }}
           RELEASE_SHA: ${{ steps.release_files.outputs.release_sha || steps.context.outputs.merge_sha }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const tagName = process.env.TAG_NAME;
             const releaseSha = process.env.RELEASE_SHA;
@@ -492,6 +500,7 @@ jobs:
           TAG_NAME: ${{ steps.context.outputs.tag_name }}
           RELEASE_SHA: ${{ steps.release_files.outputs.release_sha || steps.context.outputs.merge_sha }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const tagName = process.env.TAG_NAME;
             const releaseSha = process.env.RELEASE_SHA;
@@ -570,6 +579,7 @@ jobs:
       - name: Upsert PR comment with release tag status
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const commentId = `${{ steps.tag_mapping.outputs.comment_id }}`;

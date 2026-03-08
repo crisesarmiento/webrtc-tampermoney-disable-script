@@ -3,6 +3,8 @@ name: codex-review
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted]
 
 permissions:
   contents: read
@@ -118,8 +120,33 @@ jobs:
           findings_file="/tmp/codex-review-findings.txt"
           : > "$findings_file"
 
+          scan_mode="rg"
+          if ! command -v rg >/dev/null 2>&1; then
+            scan_mode="perl"
+            echo "ripgrep not available; using perl fallback for high-risk scan."
+          elif ! rg --pcre2 --version >/dev/null 2>&1; then
+            scan_mode="perl"
+            echo "ripgrep lacks PCRE2 support; using perl fallback for high-risk scan."
+          fi
+
           for pattern in "${patterns[@]}"; do
-            rg --pcre2 -n --color never "$pattern" "${scan_files[@]}" >> "$findings_file" || true
+            if [ "$scan_mode" = "rg" ]; then
+              if ! rg --pcre2 -n --color never "$pattern" "${scan_files[@]}" >> "$findings_file"; then
+                rg_status=$?
+                if [ "$rg_status" -ne 1 ]; then
+                  echo "High-risk scan failed while evaluating pattern: $pattern"
+                  exit "$rg_status"
+                fi
+              fi
+              continue
+            fi
+
+            PATTERN="$pattern" perl -ne '
+              BEGIN { $re = $ENV{"PATTERN"}; }
+              if (/$re/) {
+                print "$ARGV:$.:$_";
+              }
+            ' "${scan_files[@]}" >> "$findings_file"
           done
 
           sort -u "$findings_file" -o "$findings_file"
