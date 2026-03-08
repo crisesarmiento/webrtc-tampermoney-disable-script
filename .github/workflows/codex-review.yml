@@ -124,9 +124,13 @@ jobs:
           if ! command -v rg >/dev/null 2>&1; then
             scan_mode="perl"
             echo "ripgrep not available; using perl fallback for high-risk scan."
-          elif ! rg --pcre2 --version >/dev/null 2>&1; then
-            scan_mode="perl"
-            echo "ripgrep lacks PCRE2 support; using perl fallback for high-risk scan."
+          else
+            rg_probe_status=0
+            printf '' | rg --pcre2 -n 'a' >/dev/null 2>&1 || rg_probe_status=$?
+            if [ "$rg_probe_status" -ne 0 ] && [ "$rg_probe_status" -ne 1 ]; then
+              scan_mode="perl"
+              echo "ripgrep lacks PCRE2 support; using perl fallback for high-risk scan."
+            fi
           fi
 
           for pattern in "${patterns[@]}"; do

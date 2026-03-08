@@ -95,6 +95,42 @@ jobs:
             core.setOutput('merge_sha', mergeSha);
             core.setOutput('pr_labels', JSON.stringify((pr.labels || []).map((label) => (label?.name || '').trim()).filter(Boolean)));
 
+      - name: Find existing release tag mapping comment on PR
+        id: tag_mapping
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_PAT }}
+          script: |
+            const issueNumber = Number(`${{ steps.pr.outputs.pr_number }}`);
+            const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
+            const markerIdentifier = /<!--\s*linear-release-tag-ticket-identifier:([^\s>]+)\s*-->/i;
+            const markerUrl = /<!--\s*linear-release-tag-ticket-url:([^\s>]+)\s*-->/i;
+            const markerTag = /^-\s*Tag:\s*(v[0-9]+(?:\.[0-9]+){0,2})\s*$/im;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const found = comments.find((comment) => markerId.test(comment.body || ''));
+            if (!found) {
+              core.setOutput('comment_id', '');
+              core.setOutput('linear_id', '');
+              core.setOutput('linear_identifier', '');
+              core.setOutput('linear_url', '');
+              core.setOutput('tag_name', '');
+              return;
+            }
+
+            const body = found.body || '';
+            core.setOutput('comment_id', String(found.id));
+            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
+            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
+            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
+            core.setOutput('tag_name', body.match(markerTag)?.[1] || '');
+
       - name: Build release context
         id: context
         env:
@@ -104,6 +140,7 @@ jobs:
           PR_URL: ${{ steps.pr.outputs.pr_url }}
           MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
           PR_LABELS_JSON: ${{ steps.pr.outputs.pr_labels }}
+          PRIOR_TAG_NAME: ${{ steps.tag_mapping.outputs.tag_name }}
         run: |
           set -euo pipefail
 
@@ -145,10 +182,14 @@ jobs:
           BUMP_LEVEL="patch"
           BUMP_SOURCE="label:patch"
           EXISTING_TAG_FOR_MERGE="$(git tag --list 'v*' --points-at "$MERGE_SHA" | sort -V | tail -n 1 || true)"
+          PREVIOUS_TAG_FROM_PR="${PRIOR_TAG_NAME:-}"
 
           if [ -n "$EXPLICIT_VERSION" ]; then
             TAG_NAME="v$(normalize_version "$EXPLICIT_VERSION")"
             BUMP_SOURCE="explicit_pr_version"
+          elif [ -n "$PREVIOUS_TAG_FROM_PR" ]; then
+            TAG_NAME="$PREVIOUS_TAG_FROM_PR"
+            BUMP_SOURCE="existing_tag_from_pr_comment"
           elif [ -n "$EXISTING_TAG_FOR_MERGE" ]; then
             TAG_NAME="$EXISTING_TAG_FOR_MERGE"
             BUMP_SOURCE="existing_tag_for_merge_sha"
@@ -228,39 +269,6 @@ jobs:
             }
 
             const body = found.body || '';
-            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
-            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
-            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
-
-      - name: Find existing release tag mapping comment on PR
-        id: tag_mapping
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.RELEASE_PAT }}
-          script: |
-            const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
-            const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
-            const markerIdentifier = /<!--\s*linear-release-tag-ticket-identifier:([^\s>]+)\s*-->/i;
-            const markerUrl = /<!--\s*linear-release-tag-ticket-url:([^\s>]+)\s*-->/i;
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              per_page: 100,
-            });
-
-            const found = comments.find((comment) => markerId.test(comment.body || ''));
-            if (!found) {
-              core.setOutput('comment_id', '');
-              core.setOutput('linear_id', '');
-              core.setOutput('linear_identifier', '');
-              core.setOutput('linear_url', '');
-              return;
-            }
-
-            const body = found.body || '';
-            core.setOutput('comment_id', String(found.id));
             core.setOutput('linear_id', body.match(markerId)?.[1] || '');
             core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
             core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');

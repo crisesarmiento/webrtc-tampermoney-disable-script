@@ -60,7 +60,6 @@ For Linear/GitHub/Codex automation setup, use:
 - Optional magic word in PR body/commit: `Closes <TEAM>-<number>`
 - Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
 - Keep repository default branch set to `development` so Codex starts from the integration branch.
-- Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
 - Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
