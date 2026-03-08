@@ -78,7 +78,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t changed_files < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          mapfile -t changed_files < <(git diff --name-only --merge-base "$BASE_SHA" "$HEAD_SHA")
           if [ "${#changed_files[@]}" -eq 0 ]; then
             {
               echo "high_risk=false"
