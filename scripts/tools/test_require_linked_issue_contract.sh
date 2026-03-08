@@ -8,7 +8,7 @@ validate_case() {
   if [ "$base_ref" = "main" ] && [ "$head_ref" = "development" ]; then
     ok=1
   elif [[ "$head_ref" =~ ^codex/([A-Z]+-[0-9]+)-[a-z0-9][a-z0-9._-]*$ ]]; then
-    local b="" h="" title_id=""
+    local h="" title_id=""
     [[ "$head_ref" =~ ^codex/([A-Z]+-[0-9]+)- ]] && local h="${BASH_REMATCH[1]}"
     if [[ "$title" =~ ^\[([A-Z]+-[0-9]+)\][[:space:]]+.+$ ]]; then
       title_id="${BASH_REMATCH[1]}"
