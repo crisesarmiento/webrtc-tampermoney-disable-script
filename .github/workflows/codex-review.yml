@@ -131,12 +131,11 @@ jobs:
 
           for pattern in "${patterns[@]}"; do
             if [ "$scan_mode" = "rg" ]; then
-              if ! rg --pcre2 -n --color never "$pattern" "${scan_files[@]}" >> "$findings_file"; then
-                rg_status=$?
-                if [ "$rg_status" -ne 1 ]; then
-                  echo "High-risk scan failed while evaluating pattern: $pattern"
-                  exit "$rg_status"
-                fi
+              rg_status=0
+              rg --pcre2 -n --color never "$pattern" "${scan_files[@]}" >> "$findings_file" || rg_status=$?
+              if [ "$rg_status" -ne 0 ] && [ "$rg_status" -ne 1 ]; then
+                echo "High-risk scan failed while evaluating pattern: $pattern"
+                exit "$rg_status"
               fi
               continue
             fi
