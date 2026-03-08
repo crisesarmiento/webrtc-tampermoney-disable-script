@@ -2,12 +2,12 @@ name: Release Merge Create Tag
 
 on:
   pull_request:
-    branches: [master]
+    branches: [main]
     types: [closed]
   workflow_dispatch:
     inputs:
       pr_number:
-        description: "Release PR number to process (development -> master, already merged)"
+        description: "Release PR number to process (development -> main, already merged)"
         required: true
         type: string
 
@@ -19,7 +19,7 @@ permissions:
 jobs:
   create-release-tag:
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master' && github.event.pull_request.head.ref == 'development') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'development') || github.event_name == 'workflow_dispatch' }}
     concurrency:
       group: release-merge-tag-${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.pr_number }}
       cancel-in-progress: false
@@ -27,9 +27,14 @@ jobs:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
       LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
       LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
+      GH_TOKEN: ${{ secrets.RELEASE_PAT }}  # Used by authenticated CLI/git operations in this job.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_PAT }}  # Authenticate checkout + future git ops as your PAT (bypasses PR req)
+          fetch-depth: 0
+          ref: main
 
       - name: Validate configuration
         run: |
@@ -43,6 +48,7 @@ jobs:
         env:
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const isDispatch = context.eventName === 'workflow_dispatch';
             let pr;
@@ -71,8 +77,8 @@ jobs:
               core.setFailed(`PR #${pr.number} is not merged.`);
               return;
             }
-            if (pr.base?.ref !== 'master' || pr.head?.ref !== 'development') {
-              core.setFailed(`PR #${pr.number} is ${pr.head?.ref} -> ${pr.base?.ref}; expected development -> master.`);
+            if (pr.base?.ref !== 'main' || pr.head?.ref !== 'development') {
+              core.setFailed(`PR #${pr.number} is ${pr.head?.ref} -> ${pr.base?.ref}; expected development -> main.`);
               return;
             }
 
@@ -87,6 +93,43 @@ jobs:
             core.setOutput('pr_body', pr.body || '');
             core.setOutput('pr_url', pr.html_url || '');
             core.setOutput('merge_sha', mergeSha);
+            core.setOutput('pr_labels', JSON.stringify((pr.labels || []).map((label) => (label?.name || '').trim()).filter(Boolean)));
+
+      - name: Find existing release tag mapping comment on PR
+        id: tag_mapping
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.RELEASE_PAT }}
+          script: |
+            const issueNumber = Number(`${{ steps.pr.outputs.pr_number }}`);
+            const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
+            const markerIdentifier = /<!--\s*linear-release-tag-ticket-identifier:([^\s>]+)\s*-->/i;
+            const markerUrl = /<!--\s*linear-release-tag-ticket-url:([^\s>]+)\s*-->/i;
+            const markerTag = /^-\s*Tag:\s*(v[0-9]+(?:\.[0-9]+){0,2})\s*$/im;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const found = comments.find((comment) => markerId.test(comment.body || ''));
+            if (!found) {
+              core.setOutput('comment_id', '');
+              core.setOutput('linear_id', '');
+              core.setOutput('linear_identifier', '');
+              core.setOutput('linear_url', '');
+              core.setOutput('tag_name', '');
+              return;
+            }
+
+            const body = found.body || '';
+            core.setOutput('comment_id', String(found.id));
+            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
+            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
+            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
+            core.setOutput('tag_name', body.match(markerTag)?.[1] || '');
 
       - name: Build release context
         id: context
@@ -96,23 +139,87 @@ jobs:
           PR_BODY: ${{ steps.pr.outputs.pr_body }}
           PR_URL: ${{ steps.pr.outputs.pr_url }}
           MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
+          PR_LABELS_JSON: ${{ steps.pr.outputs.pr_labels }}
+          PRIOR_TAG_NAME: ${{ steps.tag_mapping.outputs.tag_name }}
         run: |
-          VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,3}([-.][A-Za-z0-9._]+)?' | head -n 1 || true)"
-          if [ -z "$VERSION" ]; then
-            echo "Could not find release version tag (example: v8.1) in PR title/body."
-            exit 1
+          set -euo pipefail
+
+          normalize_version() {
+            local raw="${1#v}"
+            local major=0
+            local minor=0
+            local patch=0
+            IFS='.' read -r major minor patch _ <<< "$raw"
+            major="${major:-0}"
+            minor="${minor:-0}"
+            patch="${patch:-0}"
+            printf '%s.%s.%s' "$major" "$minor" "$patch"
+          }
+
+          bump_from_version() {
+            local base="$1"
+            local bump="$2"
+            local major minor patch
+            IFS='.' read -r major minor patch <<< "$base"
+            case "$bump" in
+              major)
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+              minor)
+                minor=$((minor + 1))
+                patch=0
+                ;;
+              *)
+                patch=$((patch + 1))
+                ;;
+            esac
+            printf '%s.%s.%s' "$major" "$minor" "$patch"
+          }
+
+          EXPLICIT_VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
+          BUMP_LEVEL="patch"
+          BUMP_SOURCE="label:patch"
+          EXISTING_TAG_FOR_MERGE="$(git tag --list 'v*' --points-at "$MERGE_SHA" | sort -V | tail -n 1 || true)"
+          PREVIOUS_TAG_FROM_PR="${PRIOR_TAG_NAME:-}"
+
+          if [ -n "$EXPLICIT_VERSION" ]; then
+            TAG_NAME="v$(normalize_version "$EXPLICIT_VERSION")"
+            BUMP_SOURCE="explicit_pr_version"
+          elif [ -n "$PREVIOUS_TAG_FROM_PR" ]; then
+            TAG_NAME="$PREVIOUS_TAG_FROM_PR"
+            BUMP_SOURCE="existing_tag_from_pr_comment"
+          elif [ -n "$EXISTING_TAG_FOR_MERGE" ]; then
+            TAG_NAME="$EXISTING_TAG_FOR_MERGE"
+            BUMP_SOURCE="existing_tag_for_merge_sha"
+          else
+            if printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:major$"; "i"))' > /dev/null; then
+              BUMP_LEVEL="major"
+            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:minor$"; "i"))' > /dev/null; then
+              BUMP_LEVEL="minor"
+            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:patch$"; "i"))' > /dev/null; then
+              BUMP_LEVEL="patch"
+            fi
+            BUMP_SOURCE="label:${BUMP_LEVEL}"
+            LAST_TAG="$(git tag --list 'v*' --sort=-version:refname | head -n 1 || true)"
+            if [ -z "$LAST_TAG" ]; then
+              LAST_TAG="v0.0.0"
+            fi
+            BASE_VERSION="$(normalize_version "$LAST_TAG")"
+            TAG_NAME="v$(bump_from_version "$BASE_VERSION" "$BUMP_LEVEL")"
           fi
 
-          TAG_NAME="$VERSION"
           TAG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
           RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG_NAME}"
 
           LINEAR_TITLE="[Release Tag ${TAG_NAME}] ${GITHUB_REPOSITORY}"
           LINEAR_DESCRIPTION="$(printf '%s\n' \
-            "Automated release tag tracking from merged development -> master PR." \
+            "Automated release tag tracking from merged development -> main PR." \
             "" \
             "Repository: ${GITHUB_REPOSITORY}" \
             "Tag: ${TAG_NAME}" \
+            "Bump source: ${BUMP_SOURCE}" \
             "Release URL: ${TAG_URL}" \
             "Commit SHA: ${MERGE_SHA}" \
             "Source PR: ${PR_URL}" \
@@ -128,6 +235,7 @@ jobs:
             echo "tag_url=${TAG_URL}"
             echo "release_url=${RELEASE_URL}"
             echo "merge_sha=${MERGE_SHA}"
+            echo "bump_source=${BUMP_SOURCE}"
             echo "linear_title=${LINEAR_TITLE}"
             echo "linear_description<<${DELIMITER}"
             echo "${LINEAR_DESCRIPTION}"
@@ -138,6 +246,7 @@ jobs:
         id: release_mapping
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const markerId = /<!--\s*linear-release-ticket-id:([^\s>]+)\s*-->/i;
@@ -164,40 +273,8 @@ jobs:
             core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
             core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
 
-      - name: Find existing release tag mapping comment on PR
-        id: tag_mapping
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
-            const markerId = /<!--\s*linear-release-tag-ticket-id:([^\s>]+)\s*-->/i;
-            const markerIdentifier = /<!--\s*linear-release-tag-ticket-identifier:([^\s>]+)\s*-->/i;
-            const markerUrl = /<!--\s*linear-release-tag-ticket-url:([^\s>]+)\s*-->/i;
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              per_page: 100,
-            });
-
-            const found = comments.find((comment) => markerId.test(comment.body || ''));
-            if (!found) {
-              core.setOutput('comment_id', '');
-              core.setOutput('linear_id', '');
-              core.setOutput('linear_identifier', '');
-              core.setOutput('linear_url', '');
-              return;
-            }
-
-            const body = found.body || '';
-            core.setOutput('comment_id', String(found.id));
-            core.setOutput('linear_id', body.match(markerId)?.[1] || '');
-            core.setOutput('linear_identifier', body.match(markerIdentifier)?.[1] || '');
-            core.setOutput('linear_url', body.match(markerUrl)?.[1] || '');
-
-      - name: Resolve Linear completed state id
-        id: done_state
+      - name: Resolve Linear release-complete state id
+        id: release_complete_state
         run: |
           GRAPHQL_PAYLOAD="$(jq -n \
             --arg teamId "$LINEAR_TEAM_ID" \
@@ -212,25 +289,106 @@ jobs:
             -H "Authorization: ${LINEAR_API_KEY}" \
             --data-binary "$GRAPHQL_PAYLOAD")"
 
-          DONE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
-          if [ -z "$DONE_STATE_ID" ] || [ "$DONE_STATE_ID" = "null" ]; then
-            echo "Could not resolve completed state id for team ${LINEAR_TEAM_ID}."
+          # Prefer explicit "Closed" for release completion, then "Done", then any completed state.
+          RELEASE_COMPLETE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "closed") | .id' | head -n 1)"
+          if [ -z "$RELEASE_COMPLETE_STATE_ID" ] || [ "$RELEASE_COMPLETE_STATE_ID" = "null" ]; then
+            RELEASE_COMPLETE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select((.name | ascii_downcase) == "done") | .id' | head -n 1)"
+          fi
+          if [ -z "$RELEASE_COMPLETE_STATE_ID" ] || [ "$RELEASE_COMPLETE_STATE_ID" = "null" ]; then
+            RELEASE_COMPLETE_STATE_ID="$(printf '%s' "$RESPONSE" | jq -r '.data.team.states.nodes[]? | select(.type=="completed") | .id' | head -n 1)"
+          fi
+          if [ -z "$RELEASE_COMPLETE_STATE_ID" ] || [ "$RELEASE_COMPLETE_STATE_ID" = "null" ]; then
+            echo "Could not resolve Closed/Done/completed state id for team ${LINEAR_TEAM_ID}."
             echo "$RESPONSE"
             exit 1
           fi
 
-          echo "done_state_id=${DONE_STATE_ID}" >> "$GITHUB_OUTPUT"
+          echo "release_complete_state_id=${RELEASE_COMPLETE_STATE_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Commit VERSION and CHANGELOG updates
+        id: release_files
+        env:
+          TAG_NAME: ${{ steps.context.outputs.tag_name }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          PR_TITLE: ${{ steps.pr.outputs.pr_title }}
+          PR_URL: ${{ steps.pr.outputs.pr_url }}
+          MERGE_SHA: ${{ steps.context.outputs.merge_sha }}
+          BUMP_SOURCE: ${{ steps.context.outputs.bump_source }}
+        run: |
+          set -euo pipefail
+
+          VERSION_VALUE="${TAG_NAME#v}"
+          RELEASE_DATE="$(date -u +%Y-%m-%d)"
+
+          if [ -f VERSION ]; then
+            CURRENT_VERSION_RAW="$(tr -d '[:space:]' < VERSION)"
+          else
+            CURRENT_VERSION_RAW="0.0.0"
+          fi
+          CURRENT_VERSION="$(printf '%s' "$CURRENT_VERSION_RAW" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="0.0.0"
+          fi
+          TARGET_VERSION="$(printf '%s' "$VERSION_VALUE" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
+          if [ -z "$TARGET_VERSION" ]; then
+            echo "Could not parse target version from ${TAG_NAME}."
+            exit 1
+          fi
+          HIGHEST="$(printf '%s\n%s\n' "$TARGET_VERSION" "$CURRENT_VERSION" | sort -V | tail -n 1)"
+          if [ "$HIGHEST" != "$TARGET_VERSION" ]; then
+            echo "Skipping VERSION/CHANGELOG update for historical release rerun (${TAG_NAME} < v${CURRENT_VERSION})."
+            echo "release_files_action=skipped_older_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ ! -f CHANGELOG.md ]; then
+            printf '# Changelog\n\n' > CHANGELOG.md
+          fi
+
+          if ! grep -q "^## ${TAG_NAME} - " CHANGELOG.md; then
+            TMP_FILE="$(mktemp)"
+            {
+              printf '# Changelog\n\n'
+              printf '## %s - %s\n\n' "$TAG_NAME" "$RELEASE_DATE"
+              printf -- '- PR #%s: %s\n' "$PR_NUMBER" "$PR_TITLE"
+              printf -- '- PR URL: %s\n' "$PR_URL"
+              printf -- '- Merge SHA: %s\n' "$MERGE_SHA"
+              printf -- '- Bump source: %s\n\n' "$BUMP_SOURCE"
+              awk 'NR==1 && $0=="# Changelog"{next} {print}' CHANGELOG.md
+            } > "$TMP_FILE"
+            mv "$TMP_FILE" CHANGELOG.md
+          fi
+
+          printf '%s\n' "$VERSION_VALUE" > VERSION
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md VERSION
+
+          if git diff --cached --quiet; then
+            echo "No release artifact changes detected."
+            echo "release_files_action=unchanged" >> "$GITHUB_OUTPUT"
+            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "chore(release): ${TAG_NAME}"
+          git push origin HEAD:main
+          echo "release_files_action=committed" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Create tag if missing
         id: tag
         uses: actions/github-script@v7
         env:
           TAG_NAME: ${{ steps.context.outputs.tag_name }}
-          MERGE_SHA: ${{ steps.context.outputs.merge_sha }}
+          RELEASE_SHA: ${{ steps.release_files.outputs.release_sha || steps.context.outputs.merge_sha }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const tagName = process.env.TAG_NAME;
-            const mergeSha = process.env.MERGE_SHA;
+            const releaseSha = process.env.RELEASE_SHA;
 
             try {
               await github.rest.git.getRef({
@@ -251,10 +409,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: `refs/tags/${tagName}`,
-              sha: mergeSha,
+              sha: releaseSha,
             });
 
-            core.info(`Created tag ${tagName} -> ${mergeSha}`);
+            core.info(`Created tag ${tagName} -> ${releaseSha}`);
             core.setOutput('tag_action', 'created');
 
       - name: Upsert Linear release tag issue
@@ -343,16 +501,17 @@ jobs:
           source scripts/tools/linear_sync_lib.sh
           linear_emit_summary "$LINEAR_IDENTIFIER" "$ACTION"
 
-      - name: Create draft GitHub release if missing
+      - name: Create GitHub release if missing
         id: release
         uses: actions/github-script@v7
         env:
           TAG_NAME: ${{ steps.context.outputs.tag_name }}
-          MERGE_SHA: ${{ steps.context.outputs.merge_sha }}
+          RELEASE_SHA: ${{ steps.release_files.outputs.release_sha || steps.context.outputs.merge_sha }}
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const tagName = process.env.TAG_NAME;
-            const mergeSha = process.env.MERGE_SHA;
+            const releaseSha = process.env.RELEASE_SHA;
 
             try {
               const existingRelease = await github.rest.repos.getReleaseByTag({
@@ -375,12 +534,12 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: tagName,
-              target_commitish: mergeSha,
-              draft: true,
+              target_commitish: releaseSha,
+              draft: false,
               generate_release_notes: true,
             });
 
-            core.info(`Created draft release for ${tagName}: ${createdRelease.data.html_url}`);
+            core.info(`Created release for ${tagName}: ${createdRelease.data.html_url}`);
             core.setOutput('release_action', 'created');
             core.setOutput('release_url', createdRelease.data.html_url || '');
             core.setOutput('release_id', String(createdRelease.data.id));
@@ -389,7 +548,7 @@ jobs:
         id: linear_release_close
         env:
           RELEASE_LINEAR_ID: ${{ steps.release_mapping.outputs.linear_id }}
-          DONE_STATE_ID: ${{ steps.done_state.outputs.done_state_id }}
+          RELEASE_COMPLETE_STATE_ID: ${{ steps.release_complete_state.outputs.release_complete_state_id }}
         run: |
           if [ -z "$RELEASE_LINEAR_ID" ]; then
             echo "No release PR Linear mapping found; skipping closure."
@@ -399,7 +558,7 @@ jobs:
 
           GRAPHQL_PAYLOAD="$(jq -n \
             --arg id "$RELEASE_LINEAR_ID" \
-            --arg stateId "$DONE_STATE_ID" \
+            --arg stateId "$RELEASE_COMPLETE_STATE_ID" \
             '{
               query: "mutation($id:String!, $input: IssueUpdateInput!){ issueUpdate(id:$id,input:$input){ success issue { id identifier title url } } }",
               variables: {
@@ -428,6 +587,7 @@ jobs:
       - name: Upsert PR comment with release tag status
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.RELEASE_PAT }}
           script: |
             const issueNumber = Number(`${{ steps.context.outputs.pr_number }}`);
             const commentId = `${{ steps.tag_mapping.outputs.comment_id }}`;
@@ -453,8 +613,8 @@ jobs:
               `- Tag: ${tagName}`,
               `- Tag URL: ${tagUrl}`,
               `- Tag action: ${tagAction}`,
-              `- Draft release URL: ${releaseUrl}`,
-              `- Draft release action: ${releaseAction}`,
+              `- Release URL: ${releaseUrl}`,
+              `- Release action: ${releaseAction}`,
               `- Linear tag action: ${linearAction}`,
               `- Linear tag ticket: ${linearIdentifier}`,
               `- Linear tag URL: ${linearUrl}`,

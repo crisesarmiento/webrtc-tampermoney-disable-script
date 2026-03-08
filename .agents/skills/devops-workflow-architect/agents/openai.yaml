@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevOps Workflow Architect"
+  short_description: "Manage branch, release, and CI governance for this repository"
+  default_prompt: "Implement and maintain branch strategy, release automation, semantic versioning, PR validation, and codex-review gating for webrtc-tampermoney-disable-script while preserving existing Linear sync behavior."

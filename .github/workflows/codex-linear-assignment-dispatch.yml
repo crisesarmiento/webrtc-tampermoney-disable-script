@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       linear_issue_identifier:
-        description: "Linear issue identifier (example: CE-222)"
+        description: "Linear issue identifier (example: CRIS-222)"
         required: true
         type: string
       linear_issue_url:
