@@ -140,7 +140,7 @@ jobs:
             printf '%s.%s.%s' "$major" "$minor" "$patch"
           }
 
-          EXPLICIT_VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,3}([-.][A-Za-z0-9._]+)?' | head -n 1 || true)"
+          EXPLICIT_VERSION="$(printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | grep -Eo 'v[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
           BUMP_LEVEL="patch"
           BUMP_SOURCE="label:patch"
 
@@ -148,11 +148,11 @@ jobs:
             TAG_NAME="v$(normalize_version "$EXPLICIT_VERSION")"
             BUMP_SOURCE="explicit_pr_version"
           else
-            if printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e '.[] | test("^semver:major$"; "i")' > /dev/null; then
+            if printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:major$"; "i"))' > /dev/null; then
               BUMP_LEVEL="major"
-            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e '.[] | test("^semver:minor$"; "i")' > /dev/null; then
+            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:minor$"; "i"))' > /dev/null; then
               BUMP_LEVEL="minor"
-            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e '.[] | test("^semver:patch$"; "i")' > /dev/null; then
+            elif printf '%s' "${PR_LABELS_JSON:-[]}" | jq -e 'any(.[]?; test("^semver:patch$"; "i"))' > /dev/null; then
               BUMP_LEVEL="patch"
             fi
             BUMP_SOURCE="label:${BUMP_LEVEL}"
@@ -304,6 +304,28 @@ jobs:
 
           VERSION_VALUE="${TAG_NAME#v}"
           RELEASE_DATE="$(date -u +%Y-%m-%d)"
+
+          if [ -f VERSION ]; then
+            CURRENT_VERSION_RAW="$(tr -d '[:space:]' < VERSION)"
+          else
+            CURRENT_VERSION_RAW="0.0.0"
+          fi
+          CURRENT_VERSION="$(printf '%s' "$CURRENT_VERSION_RAW" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="0.0.0"
+          fi
+          TARGET_VERSION="$(printf '%s' "$VERSION_VALUE" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
+          if [ -z "$TARGET_VERSION" ]; then
+            echo "Could not parse target version from ${TAG_NAME}."
+            exit 1
+          fi
+          HIGHEST="$(printf '%s\n%s\n' "$TARGET_VERSION" "$CURRENT_VERSION" | sort -V | tail -n 1)"
+          if [ "$HIGHEST" != "$TARGET_VERSION" ]; then
+            echo "Skipping VERSION/CHANGELOG update for historical release rerun (${TAG_NAME} < v${CURRENT_VERSION})."
+            echo "release_files_action=skipped_older_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ ! -f CHANGELOG.md ]; then
             printf '# Changelog\n\n' > CHANGELOG.md

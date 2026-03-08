@@ -42,14 +42,17 @@ jobs:
           fi
           BRANCH_LINEAR_ID="${BASH_REMATCH[1]}"
 
+          TITLE_LINEAR_ID=""
           if [[ "$PR_TITLE" =~ ^\[([A-Z]+-[0-9]+)\][[:space:]]+.+$ ]]; then
             TITLE_LINEAR_ID="${BASH_REMATCH[1]}"
-            if [ "$TITLE_LINEAR_ID" != "$BRANCH_LINEAR_ID" ]; then
-              echo "Linear ID mismatch between branch and PR title."
-              echo "Branch ID: $BRANCH_LINEAR_ID"
-              echo "Title ID:  $TITLE_LINEAR_ID"
-              exit 1
-            fi
+          elif [[ "$PR_TITLE" =~ ^([A-Z]+-[0-9]+):[[:space:]]+.+$ ]]; then
+            TITLE_LINEAR_ID="${BASH_REMATCH[1]}"
+          fi
+          if [ -n "$TITLE_LINEAR_ID" ] && [ "$TITLE_LINEAR_ID" != "$BRANCH_LINEAR_ID" ]; then
+            echo "Linear ID mismatch between branch and PR title."
+            echo "Branch ID: $BRANCH_LINEAR_ID"
+            echo "Title ID:  $TITLE_LINEAR_ID"
+            exit 1
           fi
 
           echo "identifier=${BRANCH_LINEAR_ID}" >> "$GITHUB_OUTPUT"
