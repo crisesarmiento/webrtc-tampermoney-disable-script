@@ -55,3 +55,26 @@ Rules:
 - Keep the active userscript path stable as `scripts/current/M-Game Clean Audio.user.js` (no version suffix in `current`).
 - Archive versioned release snapshots in `scripts/legacy/` (for example `M-Game Clean Audio v8.0-transport-first.user.js`).
 - When this policy changes, update hardcoded references across docs and checks (for example `README.md`, `INSTALL.md`, and `CONTRIBUTING.md`).
+
+## Linear Ticket Defaults (WebRTC Audio Script (M-Game))
+
+When creating or updating Linear issues for this repository/project, apply:
+
+- Team: `Cristian Sarmiento` (`CRIS`)
+- Project: `WebRTC Audio Script (M-Game)`
+- Cycle: current active cycle for the team (if any)
+- Labels:
+  - Exactly one `type/*` label (`type/feature`, `type/bug`, `type/chore`, `type/docs`, `type/research`, `type/spike`)
+  - Add `area/automation` for CI/CD, release, governance, or Linear/GitHub sync work
+  - Add domain labels only when relevant (`webrtc`, `privacy`, `tampermonkey`, `release-v9`)
+- Avoid legacy free-form labels in this project (for example `Fix`, `Release`, `Feature`, `Bug`)
+
+Estimate defaults:
+
+- `type/feature`: `3`
+- `type/bug`: `2`
+- `type/chore`: `2`
+- `type/docs`: `2`
+- `type/research`/`type/spike`: `1`
+
+If work is materially larger/smaller than defaults, override estimate explicitly in the issue body and keep labels consistent with scope.
