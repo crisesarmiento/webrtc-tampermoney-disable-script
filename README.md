@@ -55,12 +55,13 @@ For Linear/GitHub/Codex automation setup, use:
 - Always start by syncing `development` locally before new feature work:
   - `git checkout development`
   - `git pull origin development`
-- Branch format: `codex/<TEAM>-<number>-<slug>`
-- PR title format: `[<TEAM>-<number>] <short title>`
-- Optional magic word in PR body/commit: `Closes <TEAM>-<number>`
-- Keep the same `<TEAM>-<number>` in branch, title, and any magic-word line.
+- Branch format: `codex/CRIS-<number>-<slug>`
+- PR title format: `[CRIS-<number>] <short title>`
+- Optional magic word in PR body/commit: `Closes CRIS-<number>`
+- Keep the same `CRIS-<number>` in branch, title, and any magic-word line.
 - Keep repository default branch set to `development` so Codex starts from the integration branch.
 - Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
+- During migration, allowlist can be set via repository variable `LINEAR_ALLOWED_KEYS` (`CRIS,CE` then cut over to `CRIS`).
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
 Example:

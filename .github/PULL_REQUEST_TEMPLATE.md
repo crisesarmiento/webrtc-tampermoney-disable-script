@@ -4,10 +4,10 @@ Describe what changed and why.
 
 ## Linear Issue
 
-- Linear ID: `<TEAM>-<number>` (example: `CRIS-123`)
-- Branch format: `codex/<TEAM>-<number>-<slug>`
-- PR title format: `[<TEAM>-<number>] <short title>`
-- Optional magic word example: `Closes <TEAM>-<number>`
+- Linear ID: `CRIS-<number>` (example: `CRIS-123`)
+- Branch format: `codex/CRIS-<number>-<slug>`
+- PR title format: `[CRIS-<number>] <short title>`
+- Optional magic word example: `Closes CRIS-<number>`
 
 ## Scope
 

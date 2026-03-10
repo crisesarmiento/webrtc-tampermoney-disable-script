@@ -5,7 +5,7 @@ This setup provides:
 1. GitHub issue opened -> Linear issue created automatically.
 2. Linear assignment event -> Codex dispatch workflow and automatic Linear transition to `In Progress`.
 3. Codex work PR lifecycle automation:
-   - auto-create PR from `codex/<TEAM>-*` branches
+   - auto-create PR from `codex/<KEY>-*` branches
    - move Linear issue to `In Review` when PR opens or becomes ready
 4. Release tracking in Linear for `development -> main` PRs and `v*` tags.
 5. Strict Linear branch/title enforcement for normal work PRs.
@@ -46,6 +46,10 @@ In GitHub repository settings, add:
 - Variable: `STRICT_LINEAR_ENFORCEMENT`
   - Optional toggle for `.github/workflows/require-linked-issue.yml`.
   - Default/recommended: `true`.
+- Variable: `LINEAR_ALLOWED_KEYS`
+  - Controls allowed issue key prefixes across branch/title validation and PR-state sync workflows.
+  - Transition value: `CRIS,CE`
+  - Final value: `CRIS`
 
 Note:
 
@@ -72,19 +76,19 @@ If release automation must push `VERSION` and `CHANGELOG.md` to `main`, allow `g
 
 Required for normal work PRs:
 
-- Branch: `codex/<TEAM>-<number>-<slug>`
-- Title: `[<TEAM>-<number>] <short title>`
+- Branch: `codex/CRIS-<number>-<slug>`
+- Title: `[CRIS-<number>] <short title>`
 - Branch ID and title ID must match.
 - GitHub repository default branch should be `development` so Codex starts new task work from the integration branch.
 
 Compatibility bridge:
 
-- If Linear/Codex starts work from `<team>-<number>-<slug>` or `feature/<team>-<number>-<slug>`, automation normalizes it to `codex/<TEAM>-<number>-<slug>` and creates/updates the PR from the canonical branch.
+- If Linear/Codex starts work from `<team>-<number>-<slug>` or `feature/<team>-<number>-<slug>`, automation normalizes it to `codex/<KEY>-<number>-<slug>` and creates/updates the PR from the canonical branch when `<KEY>` is in `LINEAR_ALLOWED_KEYS`.
 
 Optional:
 
 - Magic word in PR body/commit, for example: `Closes CRIS-123`
-- If used, it must match the same `<TEAM>-<number>`.
+- If used, it must match the same issue ID in branch/title.
 
 Release exemption:
 
@@ -102,12 +106,12 @@ Release exemption:
 
 - `.github/workflows/sync-pr-state-to-linear.yml`
   - Trigger: PR `opened`, `reopened`, and `ready_for_review` into `development`.
-  - Moves matching Linear issue (`<TEAM>-*`) to `In Review` for active review state tracking.
+  - Moves matching Linear issue (`<KEY>-*`, allowlisted by `LINEAR_ALLOWED_KEYS`) to `In Review` for active review state tracking.
 
 - `.github/workflows/auto-create-pr-from-codex-branch.yml`
-  - Trigger: `push` to `codex/**`, `<team>-*`, and `feature/<team>-*` branches (CE/CRIS patterns supported by default).
-  - Canonicalizes compatible legacy branch names (`<team>-*`, `feature/<team>-*`) to `codex/<TEAM>-*` and keeps canonical branch refs updated to latest SHA.
-  - Auto-creates a PR to `development` from canonical `codex/<TEAM>-*` branch if one does not already exist.
+  - Trigger: `push` to `codex/**`, `<team>-*`, and `feature/<team>-*` branches.
+  - Canonicalizes compatible legacy branch names (`<team>-*`, `feature/<team>-*`) to `codex/<KEY>-*` and keeps canonical branch refs updated to latest SHA.
+  - Auto-creates a PR to `development` from canonical `codex/<KEY>-*` branch if one does not already exist when `<KEY>` is allowlisted.
 
 - `.github/workflows/sync-release-pr-to-linear.yml`
   - Trigger: `pull_request` to `main` when `head == development`.

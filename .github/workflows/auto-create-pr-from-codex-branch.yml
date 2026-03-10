@@ -4,14 +4,8 @@ on:
   push:
     branches:
       - codex/**
-      - ce-*
-      - CE-*
-      - cris-*
-      - CRIS-*
-      - feature/ce-*
-      - feature/CE-*
-      - feature/cris-*
-      - feature/CRIS-*
+      - "*-*"
+      - feature/*-*
 
 permissions:
   contents: write
@@ -26,12 +20,25 @@ jobs:
     steps:
       - name: Create PR when missing
         uses: actions/github-script@v7
+        env:
+          LINEAR_ALLOWED_KEYS: ${{ vars.LINEAR_ALLOWED_KEYS }}
         with:
           script: |
             const sourceBranch = context.ref.replace('refs/heads/', '');
             const sourceSha = context.sha;
             const canonicalPattern = /^codex\/([A-Z]+-\d+)-([a-z0-9][a-z0-9._-]*)$/;
             const legacyPattern = /^(?:feature\/)?([a-z]+-\d+)-(.+)$/i;
+            const allowedKeysRaw = (process.env.LINEAR_ALLOWED_KEYS || 'CRIS,CE').toUpperCase();
+            const allowedKeys = new Set(
+              allowedKeysRaw
+                .split(',')
+                .map((key) => key.trim())
+                .filter(Boolean),
+            );
+            if (allowedKeys.size === 0) {
+              allowedKeys.add('CRIS');
+              allowedKeys.add('CE');
+            }
 
             try {
               const sourceRef = await github.rest.git.getRef({
@@ -80,6 +87,12 @@ jobs:
                 return;
               }
 
+              const legacyLinearKey = linearId.split('-')[0];
+              if (!allowedKeys.has(legacyLinearKey)) {
+                core.notice(`Skipping branch with disallowed Linear key ${legacyLinearKey}. Allowed: ${[...allowedKeys].join(',')}`);
+                return;
+              }
+
               branch = `codex/${linearId}-${slug}`;
               normalizedFrom = sourceBranch;
               const refName = `heads/${branch}`;
@@ -118,6 +131,12 @@ jobs:
               }
             }
 
+            const linearKey = linearId.split('-')[0];
+            if (!allowedKeys.has(linearKey)) {
+              core.notice(`Skipping branch with disallowed Linear key ${linearKey}. Allowed: ${[...allowedKeys].join(',')}`);
+              return;
+            }
+
             const base = 'development';
             const head = `${context.repo.owner}:${branch}`;
 
@@ -149,9 +168,9 @@ jobs:
               '',
               '## Linear Issue',
               `- Linear ID: \`${linearId}\``,
-              '- Branch format: `codex/<TEAM>-<number>-<slug>`',
-              '- PR title format: `[<TEAM>-<number>] <short title>`',
-              '- Optional magic word example: `Closes <TEAM>-<number>`',
+              '- Branch format: `codex/<KEY>-<number>-<slug>`',
+              '- PR title format: `[<KEY>-<number>] <short title>`',
+              '- Optional magic word example: `Closes <KEY>-<number>`',
               '',
               `Closes ${linearId}`,
             ].filter(Boolean).join('\n');

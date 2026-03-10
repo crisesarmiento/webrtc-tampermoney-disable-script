@@ -9,17 +9,17 @@
 
 ## Mandatory Linear-first workflow
 
-1. Start from a Linear issue (`<TEAM>-<number>`, for example `CRIS-123`).
+1. Start from a Linear issue (`CRIS-<number>`, for example `CRIS-123`).
 2. Sync local `development` to the latest remote before creating your feature branch:
    - `git checkout development`
    - `git pull origin development`
 3. Create one branch from the updated `development` using:
-   - `codex/<TEAM>-<number>-<slug>`
+   - `codex/CRIS-<number>-<slug>`
 4. Open PR to `development` with title:
-   - `[<TEAM>-<number>] <short title>`
+   - `[CRIS-<number>] <short title>`
 5. Keep your branch current with `development` while work is in progress (rebase or merge) so the PR reflects the latest integration branch state.
 6. Optional in PR body or commit message:
-   - `Closes <TEAM>-<number>`
+   - `Closes CRIS-<number>`
 7. Ensure branch ID and PR title ID are the same.
 
 Release PR rule:
@@ -29,6 +29,7 @@ Release PR rule:
 Strict enforcement toggle:
 
 - Repo variable `STRICT_LINEAR_ENFORCEMENT` controls strict validation.
+- Repo variable `LINEAR_ALLOWED_KEYS` controls allowed issue key prefixes during migration (`CRIS,CE` transition; `CRIS` final).
 - Default behavior is strict (`true`).
 
 ## Current script naming policy

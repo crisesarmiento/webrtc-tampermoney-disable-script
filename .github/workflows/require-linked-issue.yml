@@ -46,6 +46,7 @@ jobs:
       INPUT_PR_TITLE: ${{ inputs.pr_title }}
       INPUT_PR_BODY: ${{ inputs.pr_body }}
       REPO_STRICT: ${{ vars.STRICT_LINEAR_ENFORCEMENT }}
+      REPO_ALLOWED_KEYS: ${{ vars.LINEAR_ALLOWED_KEYS }}
     steps:
       - name: Validate Linear branch/title conventions
         run: |
@@ -79,6 +80,12 @@ jobs:
             exit 0
           fi
 
+          ALLOWED_KEYS_RAW="${REPO_ALLOWED_KEYS:-CRIS,CE}"
+          ALLOWED_KEYS="$(printf '%s' "$ALLOWED_KEYS_RAW" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')"
+          if [ -z "$ALLOWED_KEYS" ]; then
+            ALLOWED_KEYS="CRIS,CE"
+          fi
+
           if [ -z "$HEAD_REF" ]; then
             echo "Head branch reference is required for strict validation."
             exit 1
@@ -95,6 +102,11 @@ jobs:
             exit 1
           fi
           BRANCH_LINEAR_ID="${BASH_REMATCH[1]}"
+          BRANCH_KEY="${BRANCH_LINEAR_ID%%-*}"
+          if [[ ",$ALLOWED_KEYS," != *",$BRANCH_KEY,"* ]]; then
+            echo "Branch Linear key '$BRANCH_KEY' is not allowed by LINEAR_ALLOWED_KEYS=$ALLOWED_KEYS."
+            exit 1
+          fi
 
           TITLE_LINEAR_ID=""
           if [[ "$PR_TITLE_VALUE" =~ ^\[([A-Z]+-[0-9]+)\][[:space:]]+.+$ ]]; then
@@ -114,9 +126,20 @@ jobs:
             exit 1
           fi
 
+          TITLE_KEY="${TITLE_LINEAR_ID%%-*}"
+          if [[ ",$ALLOWED_KEYS," != *",$TITLE_KEY,"* ]]; then
+            echo "PR title Linear key '$TITLE_KEY' is not allowed by LINEAR_ALLOWED_KEYS=$ALLOWED_KEYS."
+            exit 1
+          fi
+
           MAGIC_IDS="$(printf '%s\n' "$PR_BODY_VALUE" | tr '[:lower:]' '[:upper:]' | grep -Eo '(CLOSE[SD]?|FIX(E[SD])?|RESOLVE[SD]?)[:[:space:]]+[A-Z]+-[0-9]+' | grep -Eo '[A-Z]+-[0-9]+' | sort -u || true)"
           if [ -n "$MAGIC_IDS" ]; then
             while IFS= read -r magic_id; do
+              MAGIC_KEY="${magic_id%%-*}"
+              if [[ ",$ALLOWED_KEYS," != *",$MAGIC_KEY,"* ]]; then
+                echo "Magic-word Linear key '$MAGIC_KEY' is not allowed by LINEAR_ALLOWED_KEYS=$ALLOWED_KEYS."
+                exit 1
+              fi
               if [ "$magic_id" != "$BRANCH_LINEAR_ID" ]; then
                 echo "Magic-word Linear ID must match branch/title ID."
                 echo "Expected: $BRANCH_LINEAR_ID"

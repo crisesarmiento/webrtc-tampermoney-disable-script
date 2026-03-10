@@ -15,6 +15,7 @@ jobs:
     env:
       LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
       LINEAR_TEAM_ID: ${{ secrets.LINEAR_TEAM_ID }}
+      LINEAR_ALLOWED_KEYS: ${{ vars.LINEAR_ALLOWED_KEYS }}
       PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
       PR_TITLE: ${{ github.event.pull_request.title }}
     steps:
@@ -36,11 +37,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          ALLOWED_KEYS_RAW="${LINEAR_ALLOWED_KEYS:-CRIS,CE}"
+          ALLOWED_KEYS="$(printf '%s' "$ALLOWED_KEYS_RAW" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')"
+          if [ -z "$ALLOWED_KEYS" ]; then
+            ALLOWED_KEYS="CRIS,CE"
+          fi
+
           if [[ ! "$PR_HEAD_REF" =~ ^codex/([A-Z]+-[0-9]+)-[a-z0-9][a-z0-9._-]*$ ]]; then
             echo "PR head branch does not match codex/<TEAM>-<number>-<slug>."
             exit 1
           fi
           BRANCH_LINEAR_ID="${BASH_REMATCH[1]}"
+          BRANCH_KEY="${BRANCH_LINEAR_ID%%-*}"
+          if [[ ",$ALLOWED_KEYS," != *",$BRANCH_KEY,"* ]]; then
+            echo "Branch Linear key '$BRANCH_KEY' is not allowed by LINEAR_ALLOWED_KEYS=$ALLOWED_KEYS."
+            exit 1
+          fi
 
           TITLE_LINEAR_ID=""
           if [[ "$PR_TITLE" =~ ^\[([A-Z]+-[0-9]+)\][[:space:]]+.+$ ]]; then
@@ -53,6 +65,13 @@ jobs:
             echo "Branch ID: $BRANCH_LINEAR_ID"
             echo "Title ID:  $TITLE_LINEAR_ID"
             exit 1
+          fi
+          if [ -n "$TITLE_LINEAR_ID" ]; then
+            TITLE_KEY="${TITLE_LINEAR_ID%%-*}"
+            if [[ ",$ALLOWED_KEYS," != *",$TITLE_KEY,"* ]]; then
+              echo "PR title Linear key '$TITLE_KEY' is not allowed by LINEAR_ALLOWED_KEYS=$ALLOWED_KEYS."
+              exit 1
+            fi
           fi
 
           echo "identifier=${BRANCH_LINEAR_ID}" >> "$GITHUB_OUTPUT"
