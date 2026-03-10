@@ -27,7 +27,8 @@ jobs:
             const sourceBranch = context.ref.replace('refs/heads/', '');
             const sourceSha = context.sha;
             const canonicalPattern = /^codex\/([A-Z]+-\d+)-([a-z0-9][a-z0-9._-]*)$/;
-            const legacyPattern = /^(?:feature\/)?([a-z]+-\d+)-(.+)$/i;
+            const legacyPattern = /^(?:(?:codex|feature)\/)?([a-z]+-\d+)-(.+)$/i;
+            const looseLinearPattern = /(?:^|[-_/])([a-z]+-\d+)(?:[-_/]|$)/i;
             const allowedKeysRaw = (process.env.LINEAR_ALLOWED_KEYS || 'CRIS,CE').toUpperCase();
             const allowedKeys = new Set(
               allowedKeysRaw
@@ -39,6 +40,38 @@ jobs:
               allowedKeys.add('CRIS');
               allowedKeys.add('CE');
             }
+
+            const sanitizeSlug = (value) => value
+              .toLowerCase()
+              .replace(/[^a-z0-9._-]+/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+
+            const deriveFromNonCanonicalCodex = (branchName) => {
+              if (!branchName.startsWith('codex/')) {
+                return null;
+              }
+
+              const tail = branchName.slice('codex/'.length);
+              const idMatch = tail.match(looseLinearPattern);
+              if (!idMatch) {
+                return null;
+              }
+
+              const idRaw = idMatch[1];
+              const linearId = idRaw.toUpperCase();
+              const lowerTail = tail.toLowerCase();
+              const matchIndex = lowerTail.indexOf(idRaw.toLowerCase());
+              const suffix = tail.slice(matchIndex + idRaw.length).replace(/^[-_/]+/, '');
+              const prefix = tail.slice(0, matchIndex).replace(/[-_/]+$/, '');
+              const slug = sanitizeSlug(suffix || prefix || `${linearId.toLowerCase()}-work`);
+
+              if (!slug || !/^[a-z0-9][a-z0-9._-]*$/.test(slug)) {
+                return null;
+              }
+
+              return { linearId, slug };
+            };
 
             try {
               const sourceRef = await github.rest.git.getRef({
@@ -70,17 +103,19 @@ jobs:
               slug = canonicalMatch[2];
             } else {
               const legacyMatch = sourceBranch.match(legacyPattern);
-              if (!legacyMatch) {
+              const looseCodexMatch = deriveFromNonCanonicalCodex(sourceBranch);
+              if (!legacyMatch && !looseCodexMatch) {
                 core.notice(`Skipping non-conforming branch: ${sourceBranch}`);
                 return;
               }
 
-              linearId = legacyMatch[1].toUpperCase();
-              slug = legacyMatch[2]
-                .toLowerCase()
-                .replace(/[^a-z0-9._-]+/g, '-')
-                .replace(/-+/g, '-')
-                .replace(/^-|-$/g, '');
+              if (legacyMatch) {
+                linearId = legacyMatch[1].toUpperCase();
+                slug = sanitizeSlug(legacyMatch[2]);
+              } else if (looseCodexMatch) {
+                linearId = looseCodexMatch.linearId;
+                slug = looseCodexMatch.slug;
+              }
 
               if (!slug || !/^[a-z0-9][a-z0-9._-]*$/.test(slug)) {
                 core.notice(`Could not normalize branch slug from: ${sourceBranch}`);

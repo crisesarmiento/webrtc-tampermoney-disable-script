@@ -180,6 +180,7 @@ curl -X POST \
 ## 7) Runbook and observability
 
 - Runbook: [`docs/setup/linear-sync-runbook.md`](./linear-sync-runbook.md)
+- Branch remediation runbook: [`docs/setup/branch-remediation-runbook.md`](./branch-remediation-runbook.md)
 - Each Linear sync workflow emits structured status lines in this format:
   - `linear_sync linear_id=<identifier> ce_id=<identifier> status=<updated|already_done|not_found|failed> reason=<optional>`
 - Use this output for audit, alerting, and manual replay triage.
