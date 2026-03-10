@@ -87,6 +87,12 @@ jobs:
                 return;
               }
 
+              const legacyLinearKey = linearId.split('-')[0];
+              if (!allowedKeys.has(legacyLinearKey)) {
+                core.notice(`Skipping branch with disallowed Linear key ${legacyLinearKey}. Allowed: ${[...allowedKeys].join(',')}`);
+                return;
+              }
+
               branch = `codex/${linearId}-${slug}`;
               normalizedFrom = sourceBranch;
               const refName = `heads/${branch}`;
