@@ -6,9 +6,9 @@ This repository uses an OAuth-first Codex + Linear + GitHub workflow.
 
 For normal work PRs into `development`:
 
-- Branch format: `codex/<TEAM>-<number>-<slug>` (example: `codex/CRIS-123-fix-stereo-gate`)
-- PR title format: `[<TEAM>-<number>] <short title>` (example: `[CRIS-123] Fix stereo gate false positive`)
-- Optional magic words in PR body/commits (`Closes/Fixes/Resolves <TEAM>-<number>`) must use the same ID as branch/title.
+- Branch format: `codex/CRIS-<number>-<slug>` (example: `codex/CRIS-123-fix-stereo-gate`)
+- PR title format: `[CRIS-<number>] <short title>` (example: `[CRIS-123] Fix stereo gate false positive`)
+- Optional magic words in PR body/commits (`Closes/Fixes/Resolves CRIS-<number>`) must use the same ID as branch/title.
 - Set repository default branch to `development` so Codex starts tasks from the integration branch.
 
 Release exemption:
@@ -18,6 +18,7 @@ Release exemption:
 Strict toggle:
 
 - `STRICT_LINEAR_ENFORCEMENT=true` enables strict enforcement in `.github/workflows/require-linked-issue.yml`.
+- `LINEAR_ALLOWED_KEYS` controls allowed issue key prefixes across validation/sync workflows. Transition value: `CRIS,CE`; target value: `CRIS`.
 
 ## Private Operations Policy
 
