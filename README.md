@@ -4,7 +4,7 @@ Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with t
 
 This repository tracks two active tracks:
 
-- `v8.x` transport-first music stability for Atlas/X Spaces
+- `v10.0` minimal music-first WebRTC constraints hardener for Atlas/X
 - `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
@@ -28,15 +28,15 @@ This repository tracks two active tracks:
 ## Quick Start
 
 1. Import one of the current scripts into Tampermonkey:
-   - `scripts/current/M-Game Clean Audio.user.js` (transport-first Atlas/X path)
+   - `scripts/current/M-Game Clean Audio.user.js` (v10 minimal constraints hardener)
    - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
 2. Enable the script and reload the target tab.
 3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`
-4. Open DevTools Console and verify:
+4. Open DevTools Console and verify install log:
 
-```js
-mgameStatus()
+```text
+"[M-Game v10 Minimal] Installed minimal WebRTC constraints hardener."
 ```
 
 For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
@@ -72,44 +72,35 @@ Title:  [CRIS-321] Fix stereo gate false positive
 Body:   Closes CRIS-321
 ```
 
-## Strict Blocker Scope and Constraints
+## Current Scope and Constraints
 
 The current userscript scope for this guide is limited to:
 
 - `https://x.com/*`
+- `https://*.x.com/*`
 - `https://twitter.com/*`
+- `https://*.twitter.com/*`
 - `https://chatgpt.com/*`
+- `https://twimg.com/*`
+- `https://*.twimg.com/*`
+- `https://pbs.twimg.com/*`
+- `https://video.twimg.com/*`
 
 Known constraints and rollback guidance are documented in `INSTALL.md`:
 
 - Install flow
 - Domain scope
 - Explicit limitations and known breakage
-- Fast rollback (`mgameProfile('compat_v52')`) and full rollback
+- Full rollback (disable userscript and reload)
 
-## Runtime Diagnostics
+## Runtime Validation
 
-Available console commands in `v8.0-transport-first`:
+The v10 script is intentionally minimal and does not expose custom `mgame*` console commands.
 
-- `mgameStatus()`
-- `mgameInspect()`
-- `mgameProfile([name])`
-- `mgameGain([value])`
-- `mgameStats(intervalMs, durationMs)`
-- `mgameDropoutProbe(intervalMs, durationMs)`
-- `mgameCodecProbe(intervalMs, durationMs)`
-- `mgameStereoProbe(sampleMs)`
-- `mgameGateCheck(intervalMs, durationMs)`
+Validate behavior using:
 
-These commands help verify:
-
-- Outbound sender stability
-- Runtime bitrate continuity
-- Runtime codec/transport continuity
-- Stereo integrity vs dual-mono collapse
-- Dropout windows during live publish
-- Opus guard status (`usedtx=0`, stereo/fullband settings)
-- Strict-mode pass/fail with compat fallback guidance
+- `chrome://webrtc-internals` when available (confirm audio processing constraints are disabled)
+- Controlled A/B runs when internals are unavailable (Atlas environments)
 
 ## Capture Regression Analysis
 
