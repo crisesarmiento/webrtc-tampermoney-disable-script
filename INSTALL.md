@@ -1,16 +1,16 @@
 # Install, Scope, and Rollback Guide
 
-This guide documents the current Tampermonkey userscript workflow for this repository.
+This guide documents the current Tampermonkey workflow for the active minimal userscript.
 
 Current script path:
 
 - `scripts/current/M-Game Clean Audio.user.js`
 
-For the standalone v9 strict WebRTC blocker workflow, use:
+For the standalone v9 strict blocker workflow, use:
 
 - `docs/setup/webrtc-strict-blocker-install.md`
 
-The script runs in Tampermonkey and applies strict WebRTC audio handling defaults with a compatibility fallback profile.
+The v10 script is intentionally minimal: it only hardens WebRTC audio constraints to disable browser-side post-processing.
 
 ---
 
@@ -20,6 +20,9 @@ The script runs in Tampermonkey and applies strict WebRTC audio handling default
 
 - Chromium-based browser with Tampermonkey installed.
 - Access to one of the supported domains (listed in [Domain scope](#2-domain-scope)).
+- Disable conflicting scripts during validation:
+  - `WebRTC Strict Blocker (Atlas + X)`
+  - `Disable WebRTC Audio Processing v9.0-strict`
 
 ### Option A: Import from file (recommended)
 
@@ -39,114 +42,107 @@ The script runs in Tampermonkey and applies strict WebRTC audio handling default
 
 1. Open a supported site tab and reload it.
 2. Open DevTools Console.
-3. Run:
+3. Confirm this log appears once:
 
-```js
-mgameStatus()
+```text
+[M-Game v10 Minimal] Installed minimal WebRTC constraints hardener.
 ```
-
-Expected:
-
-- `version` is present.
-- `profile` is present (`strict` by default).
-- `supportedConstraints` is populated where browser support exists.
 
 ---
 
 ## 2) Domain scope
 
-The script is intentionally scoped by metadata `@match` rules to these domains:
+The script uses metadata `@match` rules for these domains:
 
 - `https://x.com/*`
+- `https://*.x.com/*`
 - `https://twitter.com/*`
+- `https://*.twitter.com/*`
 - `https://chatgpt.com/*`
+- `https://twimg.com/*`
+- `https://*.twimg.com/*`
+- `https://pbs.twimg.com/*`
+- `https://video.twimg.com/*`
 
 Practical implications:
 
-- The script does not run on other websites unless `@match` values are changed.
-- Atlas usage is covered under `chatgpt.com` URLs.
-- X Spaces usage is covered under `x.com` and `twitter.com` URLs.
+- Core usage remains on `x.com`, `twitter.com`, and `chatgpt.com`.
+- Extended X/Twitter host coverage avoids missing frame/embed capture paths.
+- Behavior is identical across all matched hosts (constraint hardening only).
 
 ---
 
-## 3) Live session checks
+## 3) What the script changes
 
-1. Open Atlas or X Spaces in a supported tab.
-2. Start/join the live flow and begin publishing audio.
-3. In Console, run checks in order:
+The script patches only two APIs:
 
-```js
-mgameInspect()
-await mgameStereoProbe(1500)
-await mgameDropoutProbe(500, 12000)
-await mgameCodecProbe(1200, 12000)
-await mgameGateCheck(500, 12000)
-```
+1. `navigator.mediaDevices.getUserMedia`
+2. `MediaStreamTrack.prototype.applyConstraints` (audio tracks only)
 
-If strict mode fails, switch to compatibility profile and re-check:
+It forces these constraints to `false`:
 
-```js
-mgameProfile('compat_v52')
-await mgameGateCheck(500, 12000)
-```
+- `echoCancellation`
+- `noiseSuppression`
+- `autoGainControl`
+- `voiceIsolation` (when supported)
+- Legacy `goog*` flags at:
+  - top-level audio constraint object
+  - `audio.advanced[]`
+  - `audio.mandatory`
+  - `audio.optional[]`
 
----
+Explicit non-goals:
 
-## 4) Explicit limitations and known breakage
-
-These constraints are known and expected:
-
-1. **Browser and engine variability**
-   - Constraint support differs by browser build and platform.
-   - Some `getUserMedia` or sender parameter hints can be ignored at runtime.
-
-2. **Profile behavior differences**
-   - `strict` is default and prioritizes transport and stereo checks.
-   - `compat_v52` may be required on unstable renegotiation paths.
-
-3. **Stereo gate sensitivity**
-   - Stereo diagnostics can flag near-identical channels as dual-mono risk.
-   - Some program material may look near-identical even when not fully broken.
-
-4. **Site update risk**
-   - Atlas/X Spaces frontend changes can alter timing, sender wiring, or negotiation behavior.
-   - Previously passing checks can regress after site deploys.
-
-5. **Out-of-scope behavior**
-   - The script does not modify native desktop apps.
-   - The script does not guarantee identical behavior across all hardware or driver paths.
+- No SDP munging
+- No `RTCPeerConnection` wrapping
+- No sender bitrate/channel forcing
+- No gain-stage DSP/retrack pipeline
 
 ---
 
-## 5) Rollback and recovery
+## 4) Validation matrix
 
-### Fast rollback (no tab reload first)
+1. Apply M-Game baseline routing:
+   - `Chat Audio Source = Stream PC`
+   - `Game Audio Source = Stream PC`
+2. Baseline pass with mic DSP OFF (`EQ/Compressor/Noise Gate/De-esser/HPF` off; Boost only if needed).
+3. Run A/B with identical routing:
+   - Script OFF + DSP OFF
+   - Script ON + DSP OFF
+   - Script ON + DSP ON (preferred voice profile)
+4. Compare Atlas and X Spaces outcomes.
+5. If `chrome://webrtc-internals` is available, confirm processing flags are disabled.
+6. If internals are not available (Atlas restrictions), rely on controlled A/B subjective quality and level stability.
 
-```js
-mgameProfile('compat_v52')
-```
+---
 
-Then re-run:
+## 5) Explicit limitations
 
-```js
-await mgameGateCheck(500, 12000)
-```
+1. Browser/engine behavior differs; some apps may still override constraints later.
+2. This script only handles browser-side WebRTC constraints, not hardware routing or driver-level effects.
+3. Native desktop apps are out of scope.
+4. Site updates can change capture paths and require re-validation.
+
+---
+
+## 6) Rollback and recovery
 
 ### Full rollback
 
-1. Disable the userscript in Tampermonkey.
-2. Reload the affected Atlas/X tab.
+1. Disable `M-Game Clean Audio` in Tampermonkey.
+2. Reload affected tabs.
 3. Re-test publishing.
 
-### Legacy rollback target
+### Alternate fallback
 
-If needed, temporarily use a known older script from:
+If needed, switch temporarily to another script in:
 
+- `scripts/current/`
 - `scripts/legacy/`
 
 ---
 
-## 6) Validation and evidence capture
+## 7) Validation evidence capture
 
 For audio capture regression checks:
 
