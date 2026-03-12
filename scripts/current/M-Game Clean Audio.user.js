@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         M-Game Clean Audio v10 Minimal Constraints Hardener (Atlas + X)
+// @name         M-Game Clean Audio v11 DEBUG (Atlas + X)
 // @namespace    http://tampermonkey.net/
-// @version      10.0
+// @version      11.0
 // @description  Minimal music-first WebRTC hardener: disable browser audio post-processing constraints only
 // @author       Cris Sarmiento
 // @match        https://x.com/*
@@ -20,13 +20,14 @@
 (function () {
   'use strict';
 
-  const INSTALL_FLAG = '__mgameV10MinimalInstalled';
-  const TAG = '[M-Game v10 Minimal]';
+  const INSTALL_FLAG = '__mgameV11DebugInstalled';
+  const TAG = '[M-Game DEBUG]';
 
   if (window[INSTALL_FLAG]) {
     return;
   }
   window[INSTALL_FLAG] = true;
+  console.log('[M-Game DEBUG] ✅ v11 DEBUG script loaded and active');
 
   const W3C_DISABLED = Object.freeze({
     echoCancellation: false,
@@ -137,7 +138,10 @@
 
     try {
       mediaDevices.getUserMedia = function patchedGetUserMedia(constraints) {
-        return originalGetUserMedia(hardenGetUserMediaConstraints(constraints));
+        console.log('[M-Game DEBUG] getUserMedia requested constraints:', JSON.stringify(constraints, null, 2));
+        const hardenedConstraints = hardenGetUserMediaConstraints(constraints);
+        console.log('[M-Game DEBUG] getUserMedia hardened constraints:', JSON.stringify(hardenedConstraints, null, 2));
+        return originalGetUserMedia(hardenedConstraints);
       };
     } catch (error) {
       console.warn(TAG, 'Failed to patch getUserMedia:', error);
@@ -150,6 +154,7 @@
     try {
       MediaStreamTrack.prototype.applyConstraints = function patchedApplyConstraints(constraints) {
         if (this && this.kind === 'audio') {
+          console.log('[M-Game DEBUG] 🔧 applyConstraints called on audio track - constraints:', JSON.stringify(constraints, null, 2));
           const normalized =
             constraints && typeof constraints === 'object'
               ? hardenNestedAudioPaths(constraints)
