@@ -23,6 +23,15 @@
   const INSTALL_FLAG = '__mgameV11DebugInstalled';
   const TAG = '[M-Game DEBUG]';
 
+  function safeDebugStringify(value) {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error);
+      return `[unserializable value: ${message}]`;
+    }
+  }
+
   if (window[INSTALL_FLAG]) {
     return;
   }
@@ -138,9 +147,9 @@
 
     try {
       mediaDevices.getUserMedia = function patchedGetUserMedia(constraints) {
-        console.log('[M-Game DEBUG] getUserMedia requested constraints:', JSON.stringify(constraints, null, 2));
+        console.log('[M-Game DEBUG] getUserMedia requested constraints:', safeDebugStringify(constraints));
         const hardenedConstraints = hardenGetUserMediaConstraints(constraints);
-        console.log('[M-Game DEBUG] getUserMedia hardened constraints:', JSON.stringify(hardenedConstraints, null, 2));
+        console.log('[M-Game DEBUG] getUserMedia hardened constraints:', safeDebugStringify(hardenedConstraints));
         return originalGetUserMedia(hardenedConstraints);
       };
     } catch (error) {
@@ -154,7 +163,7 @@
     try {
       MediaStreamTrack.prototype.applyConstraints = function patchedApplyConstraints(constraints) {
         if (this && this.kind === 'audio') {
-          console.log('[M-Game DEBUG] 🔧 applyConstraints called on audio track - constraints:', JSON.stringify(constraints, null, 2));
+          console.log('[M-Game DEBUG] 🔧 applyConstraints called on audio track - constraints:', safeDebugStringify(constraints));
           const normalized =
             constraints && typeof constraints === 'object'
               ? hardenNestedAudioPaths(constraints)
