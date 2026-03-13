@@ -141,6 +141,10 @@ For v9 strict-blocker release planning, see:
 
 - `docs/changelog/v9-roadmap.md`
 
+For the next release after `v8.2` (`CRIS-18`), see:
+
+- `docs/setup/linear-v9-release-plan.md`
+
 ## Project Context Images
 
 ![M-Game Setup](evidence/screenshots/M%20Game%20RGB.png)
