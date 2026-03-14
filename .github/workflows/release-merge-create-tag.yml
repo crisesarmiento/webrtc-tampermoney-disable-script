@@ -328,6 +328,18 @@ jobs:
           VERSION_VALUE="${TAG_NAME#v}"
           RELEASE_DATE="$(date -u +%Y-%m-%d)"
 
+          git fetch origin main --tags
+          MAIN_HEAD="$(git rev-parse origin/main)"
+          if [ "$MAIN_HEAD" != "$MERGE_SHA" ]; then
+            echo "main has advanced beyond merge SHA (${MERGE_SHA}); skipping VERSION/CHANGELOG commit for deterministic rerun."
+            echo "release_files_action=skipped_main_advanced" >> "$GITHUB_OUTPUT"
+            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Attach HEAD to a branch before writing release files/pushing.
+          git checkout -B main "$MERGE_SHA"
+
           if [ -f VERSION ]; then
             CURRENT_VERSION_RAW="$(tr -d '[:space:]' < VERSION)"
           else
