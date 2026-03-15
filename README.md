@@ -4,7 +4,7 @@ Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with t
 
 This repository tracks two active tracks:
 
-- `v10.0` minimal music-first WebRTC constraints hardener for Atlas/X
+- `v11.0` debug-enabled minimal music-first WebRTC constraints hardener for Atlas/X
 - `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
@@ -28,7 +28,7 @@ This repository tracks two active tracks:
 ## Quick Start
 
 1. Import one of the current scripts into Tampermonkey:
-   - `scripts/current/M-Game Clean Audio.user.js` (v10 minimal constraints hardener)
+   - `scripts/current/M-Game Clean Audio.user.js` (v11 DEBUG minimal constraints hardener)
    - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
 2. Enable the script and reload the target tab.
 3. For Atlas transport testing, select mic input:
@@ -36,7 +36,7 @@ This repository tracks two active tracks:
 4. Open DevTools Console and verify install log:
 
 ```text
-"[M-Game v10 Minimal] Installed minimal WebRTC constraints hardener."
+"[M-Game DEBUG] ✅ v11 DEBUG script loaded and active"
 ```
 
 For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
@@ -95,7 +95,7 @@ Known constraints and rollback guidance are documented in `INSTALL.md`:
 
 ## Runtime Validation
 
-The v10 script is intentionally minimal and does not expose custom `mgame*` console commands.
+The v11 script keeps the minimal hardening behavior and adds DEBUG logging around media APIs. It does not expose custom `mgame*` console commands.
 
 Validate behavior using:
 
@@ -130,10 +130,10 @@ From `evidence/audio/ScreenRecording_02-20-2026-12-18-00_1.wav`:
 
 These findings define the `v8.0` goal: **continuous, stereo-intact, transport-stable music capture**.
 
-## v8 Roadmap
+## Release Snapshot
 
-- `v8.0`: transport-first + strict stereo gates + `compat_v52` fallback
-- `v8.1` (released): gated hardening promoted from `development` to `main` via release tag `v8.1`
+- Latest release: `v11.0.0` (published 2026-03-15)
+- Previous tags: `v8.2`, `v8.1`, `v8.0.0`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
 
