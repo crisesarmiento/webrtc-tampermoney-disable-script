@@ -78,9 +78,10 @@ jobs:
         run: |
           bash -n "scripts/tools/analyze_capture_metrics.sh"
           bash -n "scripts/tools/linear_sync_lib.sh"
+          bash -n "scripts/tools/release_readiness_linear_gate.sh"
           bash -n "scripts/tools/test_auto_create_pr_branch_policy_contract.sh"
           bash -n "scripts/tools/test_require_linked_issue_contract.sh"
-          shellcheck scripts/tools/linear_sync_lib.sh scripts/tools/test_auto_create_pr_branch_policy_contract.sh scripts/tools/test_require_linked_issue_contract.sh
+          shellcheck scripts/tools/linear_sync_lib.sh scripts/tools/release_readiness_linear_gate.sh scripts/tools/test_auto_create_pr_branch_policy_contract.sh scripts/tools/test_require_linked_issue_contract.sh
 
       - name: PR payload smoke tests
         run: |
