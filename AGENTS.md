@@ -6,17 +6,27 @@ This repository uses an OAuth-first Codex + Linear + GitHub workflow.
 
 For normal work PRs into `development`:
 
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic words in PR body/commits (`Closes/Fixes/Resolves CE-<number>`) must use the same `CE-<number>` as branch/title.
+- Branch format: `codex/CRIS-<number>-<slug>` (example: `codex/CRIS-123-fix-stereo-gate`)
+- PR title format: `[CRIS-<number>] <short title>` (example: `[CRIS-123] Fix stereo gate false positive`)
+- Optional magic words in PR body/commits (`Closes/Fixes/Resolves CRIS-<number>`) must use the same ID as branch/title.
+- Set repository default branch to `development` so Codex starts tasks from the integration branch.
 
 Release exemption:
 
-- `development -> master` PRs are exempt from branch/title enforcement.
+- `development -> main` PRs are exempt from branch/title enforcement.
 
 Strict toggle:
 
 - `STRICT_LINEAR_ENFORCEMENT=true` enables strict enforcement in `.github/workflows/require-linked-issue.yml`.
+- `LINEAR_ALLOWED_KEYS` controls allowed issue key prefixes across validation/sync workflows. Transition value: `CRIS,CE`; target value: `CRIS`.
+
+## Private Operations Policy
+
+- Treat `LINEAR_API_KEY`, `LINEAR_TEAM_ID`, and `LINEAR_PROJECT_ID` as secrets only.
+- Never commit raw Linear team/project IDs, private management identifiers, or internal-only issue URLs to tracked files.
+- Use sanitized placeholders (for example: `<LINEAR_ISSUE_URL>`) in docs, examples, and logs.
+- Keep operational identifiers in GitHub Secrets and local runtime configuration only.
+- Keep `STRICT_LINEAR_ENFORCEMENT` configured in repository settings as needed, without storing private IDs in tracked files.
 
 ## PR Review Output Contract
 
@@ -40,3 +50,9 @@ Rules:
 - Primary AI reviewer source: Codex GitHub app integration (OAuth).
 - Keep CodeRabbit disabled for this repository to reduce noise.
 - Do not add `openai/codex-action` workflows unless the team explicitly adopts API-key-based CI reviews.
+
+## Current Script Naming Policy
+
+- Keep the active userscript path stable as `scripts/current/M-Game Clean Audio.user.js` (no version suffix in `current`).
+- Archive versioned release snapshots in `scripts/legacy/` (for example `M-Game Clean Audio v8.0-transport-first.user.js`).
+- When this policy changes, update hardcoded references across docs and checks (for example `README.md`, `INSTALL.md`, and `CONTRIBUTING.md`).

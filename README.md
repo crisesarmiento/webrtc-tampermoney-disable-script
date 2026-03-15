@@ -2,17 +2,17 @@
 
 Tampermonkey-first toolkit for stabilizing Atlas/X Spaces browser capture with the RODE M-Game RGB Dual.
 
-This repository currently focuses on one priority for `v8.0`: **music transport integrity first**.
+This repository tracks two active tracks:
 
-- Transport-first baseline (Opus music SDP guard + sender hints)
-- Strict stereo gate diagnostics
-- One-command `v5.2` compatibility fallback profile
-- Reproducible audio evidence workflow
+- `v10.0` minimal music-first WebRTC constraints hardener for Atlas/X
+- `v9.0` standalone strict WebRTC processing blocker
 
 ## What Is Included
 
-- Current script:
-  - `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- Current scripts:
+  - `scripts/current/M-Game Clean Audio.user.js`
+  - `scripts/current/WebRTC Strict Blocker.user.js`
+  - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js`
 - Legacy script archive:
   - `scripts/legacy/`
 - Capture metrics tool:
@@ -23,19 +23,28 @@ This repository currently focuses on one priority for `v8.0`: **music transport 
 - Evidence set (screenshots + WAV):
   - `evidence/`
 
+> Maintainer reminder: keep `scripts/current/M-Game Clean Audio.user.js` as the stable import path, and archive versioned releases under `scripts/legacy/`.
+
 ## Quick Start
 
-1. Import `scripts/current/M-Game Clean Audio v7.0-baseline.user.js` into Tampermonkey.
-2. Enable the script and reload Atlas/X tab.
-3. In Atlas, select mic input:
+1. Import one of the current scripts into Tampermonkey:
+   - `scripts/current/M-Game Clean Audio.user.js` (v10 minimal constraints hardener)
+   - `scripts/current/Disable WebRTC Audio Processing v9.0-strict.user.js` (standalone strict blocker)
+2. Enable the script and reload the target tab.
+3. For Atlas transport testing, select mic input:
    - `Default - M-Game RGB Dual Stream`
-4. Open DevTools Console and verify:
+4. Open DevTools Console and verify install log:
 
-```js
-mgameStatus()
+```text
+"[M-Game v10 Minimal] Installed minimal WebRTC constraints hardener."
 ```
 
-For full install and live test flow, use `INSTALL.md`.
+For full install/use/rollback documentation (including domain scope and known breakage), use `INSTALL.md`.
+
+For strict-blocker install and validation flow, use:
+
+- `docs/setup/webrtc-strict-blocker-install.md`
+- `docs/validation/v9-strict-blocker-validation.md`
 
 For Linear/GitHub/Codex automation setup, use:
 
@@ -43,43 +52,55 @@ For Linear/GitHub/Codex automation setup, use:
 
 ## Workflow
 
-- Branch format: `codex/CE-<number>-<slug>`
-- PR title format: `[CE-<number>] <short title>`
-- Optional magic word in PR body/commit: `Closes CE-<number>`
-- Keep the same `CE-<number>` in branch, title, and any magic-word line.
+- Always start by syncing `development` locally before new feature work:
+  - `git checkout development`
+  - `git pull origin development`
+- Branch format: `codex/CRIS-<number>-<slug>`
+- PR title format: `[CRIS-<number>] <short title>`
+- Optional magic word in PR body/commit: `Closes CRIS-<number>`
+- Keep the same `CRIS-<number>` in branch, title, and any magic-word line.
+- Keep repository default branch set to `development` so Codex starts from the integration branch.
+- Keep the feature branch updated with `development` before requesting review so the PR reflects the latest integration baseline.
+- During migration, allowlist can be set via repository variable `LINEAR_ALLOWED_KEYS` (`CRIS,CE` then cut over to `CRIS`).
 - OAuth-based Codex PR review is configured via GitHub app integration (outside CI workflow files).
 
 Example:
 
 ```text
-Branch: codex/CE-321-fix-stereo-gate
-Title:  [CE-321] Fix stereo gate false positive
-Body:   Closes CE-321
+Branch: codex/CRIS-321-fix-stereo-gate
+Title:  [CRIS-321] Fix stereo gate false positive
+Body:   Closes CRIS-321
 ```
 
-## Runtime Diagnostics
+## Current Scope and Constraints
 
-Available console commands in `v8.0-transport-first`:
+The current userscript scope for this guide is limited to:
 
-- `mgameStatus()`
-- `mgameInspect()`
-- `mgameProfile([name])`
-- `mgameGain([value])`
-- `mgameStats(intervalMs, durationMs)`
-- `mgameDropoutProbe(intervalMs, durationMs)`
-- `mgameCodecProbe(intervalMs, durationMs)`
-- `mgameStereoProbe(sampleMs)`
-- `mgameGateCheck(intervalMs, durationMs)`
+- `https://x.com/*`
+- `https://*.x.com/*`
+- `https://twitter.com/*`
+- `https://*.twitter.com/*`
+- `https://chatgpt.com/*`
+- `https://twimg.com/*`
+- `https://*.twimg.com/*`
+- `https://pbs.twimg.com/*`
+- `https://video.twimg.com/*`
 
-These commands help verify:
+Known constraints and rollback guidance are documented in `INSTALL.md`:
 
-- Outbound sender stability
-- Runtime bitrate continuity
-- Runtime codec/transport continuity
-- Stereo integrity vs dual-mono collapse
-- Dropout windows during live publish
-- Opus guard status (`usedtx=0`, stereo/fullband settings)
-- Strict-mode pass/fail with compat fallback guidance
+- Install flow
+- Domain scope
+- Explicit limitations and known breakage
+- Full rollback (disable userscript and reload)
+
+## Runtime Validation
+
+The v10 script is intentionally minimal and does not expose custom `mgame*` console commands.
+
+Validate behavior using:
+
+- `chrome://webrtc-internals` when available (confirm audio processing constraints are disabled)
+- Controlled A/B runs when internals are unavailable (Atlas environments)
 
 ## Capture Regression Analysis
 
@@ -111,10 +132,14 @@ These findings define the `v8.0` goal: **continuous, stereo-intact, transport-st
 
 ## v8 Roadmap
 
-- `v8.0` (current): transport-first + strict stereo gates + `compat_v52` fallback
-- `v8.1` (gated): incremental hardening only after repeated gate-check passes
+- `v8.0`: transport-first + strict stereo gates + `compat_v52` fallback
+- `v8.1` (released): gated hardening promoted from `development` to `main` via release tag `v8.1`
 
 See `docs/changelog/v7-roadmap.md` for gating criteria.
+
+For v9 strict-blocker release planning, see:
+
+- `docs/changelog/v9-roadmap.md`
 
 ## Project Context Images
 

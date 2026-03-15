@@ -8,7 +8,7 @@ This file is a historical reference document, originally centered around v5.2/v6
 It is **not** the canonical source for current baseline behavior in this repository.
 
 For current baseline behavior, see:
-- `scripts/current/M-Game Clean Audio v7.0-baseline.user.js`
+- `scripts/current/M-Game Clean Audio.user.js`
 - `docs/changelog/v7-roadmap.md`
 - `docs/analysis/v6.3-technical-review.md`
 

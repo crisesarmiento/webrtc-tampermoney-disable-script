@@ -1,0 +1,230 @@
+name: Auto Create PR From Codex Branch
+
+on:
+  push:
+    branches:
+      - codex/**
+      - "*-*"
+      - feature/*-*
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: auto-create-pr-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Create PR when missing
+        uses: actions/github-script@v7
+        env:
+          LINEAR_ALLOWED_KEYS: ${{ vars.LINEAR_ALLOWED_KEYS }}
+        with:
+          script: |
+            const sourceBranch = context.ref.replace('refs/heads/', '');
+            const sourceSha = context.sha;
+            const canonicalPattern = /^codex\/([A-Z]+-\d+)-([a-z0-9][a-z0-9._-]*)$/;
+            const legacyPattern = /^(?:(?:codex|feature)\/)?([a-z]+-\d+)-(.+)$/i;
+            const looseLinearPattern = /(?:^|[-_/])([a-z]+-\d+)(?:[-_/]|$)/i;
+            const allowedKeysRaw = (process.env.LINEAR_ALLOWED_KEYS || 'CRIS,CE').toUpperCase();
+            const allowedKeys = new Set(
+              allowedKeysRaw
+                .split(',')
+                .map((key) => key.trim())
+                .filter(Boolean),
+            );
+            if (allowedKeys.size === 0) {
+              allowedKeys.add('CRIS');
+              allowedKeys.add('CE');
+            }
+
+            const sanitizeSlug = (value) => value
+              .toLowerCase()
+              .replace(/[^a-z0-9._-]+/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+
+            const deriveFromNonCanonicalCodex = (branchName) => {
+              if (!branchName.startsWith('codex/')) {
+                return null;
+              }
+
+              const tail = branchName.slice('codex/'.length);
+              const idMatch = tail.match(looseLinearPattern);
+              if (!idMatch) {
+                return null;
+              }
+
+              const idRaw = idMatch[1];
+              const linearId = idRaw.toUpperCase();
+              const lowerTail = tail.toLowerCase();
+              const matchIndex = lowerTail.indexOf(idRaw.toLowerCase());
+              const suffix = tail.slice(matchIndex + idRaw.length).replace(/^[-_/]+/, '');
+              const prefix = tail.slice(0, matchIndex).replace(/[-_/]+$/, '');
+              const slug = sanitizeSlug(suffix || prefix || `${linearId.toLowerCase()}-work`);
+
+              if (!slug || !/^[a-z0-9][a-z0-9._-]*$/.test(slug)) {
+                return null;
+              }
+
+              return { linearId, slug };
+            };
+
+            try {
+              const sourceRef = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${sourceBranch}`,
+              });
+              const liveSourceSha = sourceRef.data.object.sha;
+              if (liveSourceSha !== sourceSha) {
+                core.notice(`Skipping stale run for ${sourceBranch}: event SHA ${sourceSha} is behind live SHA ${liveSourceSha}`);
+                return;
+              }
+            } catch (error) {
+              if (error?.status === 404) {
+                core.notice(`Source branch no longer exists: ${sourceBranch}`);
+                return;
+              }
+              throw error;
+            }
+
+            let branch = sourceBranch;
+            let linearId = '';
+            let slug = '';
+            let normalizedFrom = '';
+
+            const canonicalMatch = sourceBranch.match(canonicalPattern);
+            if (canonicalMatch) {
+              linearId = canonicalMatch[1];
+              slug = canonicalMatch[2];
+            } else {
+              const legacyMatch = sourceBranch.match(legacyPattern);
+              const looseCodexMatch = deriveFromNonCanonicalCodex(sourceBranch);
+              if (!legacyMatch && !looseCodexMatch) {
+                core.notice(`Skipping non-conforming branch: ${sourceBranch}`);
+                return;
+              }
+
+              if (legacyMatch) {
+                linearId = legacyMatch[1].toUpperCase();
+                slug = sanitizeSlug(legacyMatch[2]);
+              } else if (looseCodexMatch) {
+                linearId = looseCodexMatch.linearId;
+                slug = looseCodexMatch.slug;
+              }
+
+              if (!slug || !/^[a-z0-9][a-z0-9._-]*$/.test(slug)) {
+                core.notice(`Could not normalize branch slug from: ${sourceBranch}`);
+                return;
+              }
+
+              const legacyLinearKey = linearId.split('-')[0];
+              if (!allowedKeys.has(legacyLinearKey)) {
+                core.notice(`Skipping branch with disallowed Linear key ${legacyLinearKey}. Allowed: ${[...allowedKeys].join(',')}`);
+                return;
+              }
+
+              branch = `codex/${linearId}-${slug}`;
+              normalizedFrom = sourceBranch;
+              const refName = `heads/${branch}`;
+
+              try {
+                const existingRef = await github.rest.git.getRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: refName,
+                });
+
+                if (existingRef.data.object.sha !== sourceSha) {
+                  await github.rest.git.updateRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: refName,
+                    sha: sourceSha,
+                    force: true,
+                  });
+                  core.notice(`Updated canonical branch ${branch} -> ${sourceSha} from ${sourceBranch}`);
+                } else {
+                  core.notice(`Canonical branch ${branch} already up-to-date at ${sourceSha}`);
+                }
+              } catch (error) {
+                if (error?.status === 404) {
+                  await github.rest.git.createRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: `refs/heads/${branch}`,
+                    sha: sourceSha,
+                  });
+                  core.notice(`Created canonical branch ${branch} -> ${sourceSha} from ${sourceBranch}`);
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            const linearKey = linearId.split('-')[0];
+            if (!allowedKeys.has(linearKey)) {
+              core.notice(`Skipping branch with disallowed Linear key ${linearKey}. Allowed: ${[...allowedKeys].join(',')}`);
+              return;
+            }
+
+            const base = 'development';
+            const head = `${context.repo.owner}:${branch}`;
+
+            const existing = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              head,
+              base,
+              per_page: 1,
+            });
+
+            if (existing.data.length > 0) {
+              core.notice(`Open PR already exists for ${branch}: #${existing.data[0].number}`);
+              return;
+            }
+
+            const shortTitle = slug
+              .replace(/[._-]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .replace(/^./, (c) => c.toUpperCase());
+
+            const title = `[${linearId}] ${shortTitle}`;
+            const body = [
+              '## Summary',
+              `Auto-created from branch push \`${branch}\`.`,
+              normalizedFrom ? `- Normalized from source branch \`${normalizedFrom}\`.` : null,
+              '',
+              '## Linear Issue',
+              `- Linear ID: \`${linearId}\``,
+              '- Branch format: `codex/<KEY>-<number>-<slug>`',
+              '- PR title format: `[<KEY>-<number>] <short title>`',
+              '- Optional magic word example: `Closes <KEY>-<number>`',
+              '',
+              `Closes ${linearId}`,
+            ].filter(Boolean).join('\n');
+
+            try {
+              const created = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: branch,
+                base,
+                title,
+                body,
+                draft: true,
+              });
+              core.notice(`Created PR #${created.data.number} for ${branch}`);
+            } catch (error) {
+              if (error?.status === 403 && /not permitted to create or approve pull requests/i.test(error?.message || '')) {
+                core.notice('Repository policy blocks GitHub Actions from creating PRs; skipping auto-create.');
+                return;
+              }
+              throw error;
+            }
