@@ -1,0 +1,28 @@
+name: Release Readiness Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'development' }}
+    env:
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      LINEAR_PROJECT_ID: ${{ secrets.LINEAR_PROJECT_ID }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Included Ticket Readiness
+        run: |
+          set -euo pipefail
+          chmod +x scripts/tools/release_readiness_linear_gate.sh
+          scripts/tools/release_readiness_linear_gate.sh
