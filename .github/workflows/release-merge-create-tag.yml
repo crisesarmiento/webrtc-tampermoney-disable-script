@@ -327,90 +327,31 @@ jobs:
 
           echo "release_complete_state_id=${RELEASE_COMPLETE_STATE_ID}" >> "$GITHUB_OUTPUT"
 
-      - name: Commit VERSION and CHANGELOG updates
+      - name: Resolve release SHA (protected-main compatible)
         id: release_files
         env:
           TAG_NAME: ${{ steps.context.outputs.tag_name }}
-          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
-          PR_TITLE: ${{ steps.pr.outputs.pr_title }}
-          PR_URL: ${{ steps.pr.outputs.pr_url }}
           MERGE_SHA: ${{ steps.context.outputs.merge_sha }}
-          BUMP_SOURCE: ${{ steps.context.outputs.bump_source }}
         run: |
           set -euo pipefail
 
           VERSION_VALUE="${TAG_NAME#v}"
-          RELEASE_DATE="$(date -u +%Y-%m-%d)"
-
-          git fetch origin main --tags
-          MAIN_HEAD="$(git rev-parse origin/main)"
-          if [ "$MAIN_HEAD" != "$MERGE_SHA" ]; then
-            echo "main has advanced beyond merge SHA (${MERGE_SHA}); skipping VERSION/CHANGELOG commit for deterministic rerun."
-            echo "release_files_action=skipped_main_advanced" >> "$GITHUB_OUTPUT"
-            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Attach HEAD to a branch before writing release files/pushing.
-          git checkout -B main "$MERGE_SHA"
-
-          if [ -f VERSION ]; then
-            CURRENT_VERSION_RAW="$(tr -d '[:space:]' < VERSION)"
-          else
-            CURRENT_VERSION_RAW="0.0.0"
-          fi
-          CURRENT_VERSION="$(printf '%s' "$CURRENT_VERSION_RAW" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
-          if [ -z "$CURRENT_VERSION" ]; then
-            CURRENT_VERSION="0.0.0"
-          fi
           TARGET_VERSION="$(printf '%s' "$VERSION_VALUE" | grep -Eo '[0-9]+([.][0-9]+){0,2}' | head -n 1 || true)"
           if [ -z "$TARGET_VERSION" ]; then
             echo "Could not parse target version from ${TAG_NAME}."
             exit 1
           fi
-          HIGHEST="$(printf '%s\n%s\n' "$TARGET_VERSION" "$CURRENT_VERSION" | sort -V | tail -n 1)"
-          if [ "$HIGHEST" != "$TARGET_VERSION" ]; then
-            echo "Skipping VERSION/CHANGELOG update for historical release rerun (${TAG_NAME} < v${CURRENT_VERSION})."
-            echo "release_files_action=skipped_older_version" >> "$GITHUB_OUTPUT"
-            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-            exit 0
+
+          git fetch origin main --tags
+          MAIN_HEAD="$(git rev-parse origin/main)"
+          if [ "$MAIN_HEAD" != "$MERGE_SHA" ]; then
+            echo "main has advanced beyond merge SHA (${MERGE_SHA}); tag/release will stay pinned to merge SHA."
           fi
 
-          if [ ! -f CHANGELOG.md ]; then
-            printf '# Changelog\n\n' > CHANGELOG.md
-          fi
-
-          if ! grep -q "^## ${TAG_NAME} - " CHANGELOG.md; then
-            TMP_FILE="$(mktemp)"
-            {
-              printf '# Changelog\n\n'
-              printf '## %s - %s\n\n' "$TAG_NAME" "$RELEASE_DATE"
-              printf -- '- PR #%s: %s\n' "$PR_NUMBER" "$PR_TITLE"
-              printf -- '- PR URL: %s\n' "$PR_URL"
-              printf -- '- Merge SHA: %s\n' "$MERGE_SHA"
-              printf -- '- Bump source: %s\n\n' "$BUMP_SOURCE"
-              awk 'NR==1 && $0=="# Changelog"{next} {print}' CHANGELOG.md
-            } > "$TMP_FILE"
-            mv "$TMP_FILE" CHANGELOG.md
-          fi
-
-          printf '%s\n' "$VERSION_VALUE" > VERSION
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md VERSION
-
-          if git diff --cached --quiet; then
-            echo "No release artifact changes detected."
-            echo "release_files_action=unchanged" >> "$GITHUB_OUTPUT"
-            echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          git commit -m "chore(release): ${TAG_NAME}"
-          git push origin HEAD:main
-          echo "release_files_action=committed" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # main requires PR-based updates; do not attempt direct pushes from this workflow.
+          # Keep release tagging deterministic by anchoring to the merged release commit.
+          echo "release_files_action=skipped_protected_main_push" >> "$GITHUB_OUTPUT"
+          echo "release_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Create tag if missing
         id: tag
